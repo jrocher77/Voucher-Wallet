@@ -130,6 +130,18 @@ Voucher {
 - Support du mode sombre
 - Animations natives
 
+### Icône d'Application
+
+L'app dispose de 3 designs d'icône professionnels prêts à l'emploi :
+
+- **Design Principal** (recommandé) : Carte blanche avec code-barres sur fond bleu dégradé
+- **Design Minimal** : Code-barres simple et épuré
+- **Design Empilé** : Style wallet avec cartes empilées
+
+📖 Consultez `QUICK-ICON-SETUP.md` pour installer votre icône en 5 minutes.
+🎨 Utilisez `AppIconShowcase()` pour prévisualiser tous les designs.
+📚 Guide complet dans `APP-ICON-GUIDE.md`
+
 ## 🧪 Tests
 
 Les Previews SwiftUI sont disponibles pour toutes les vues avec données de test.

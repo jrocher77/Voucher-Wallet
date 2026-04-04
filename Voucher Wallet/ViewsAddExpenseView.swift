@@ -13,7 +13,7 @@ struct AddExpenseView: View {
     @Environment(\.modelContext) private var modelContext
     
     let voucher: Voucher
-    let existingExpense: Expense? // Pour l'édition
+    var existingExpense: Expense? // Pour l'édition - pas @State !
     
     @State private var amount: String
     @State private var note: String
@@ -29,7 +29,25 @@ struct AddExpenseView: View {
         self.voucher = voucher
         self.existingExpense = expense
         
-        _amount = State(initialValue: expense != nil ? String(format: "%.2f", expense!.amount) : "")
+        // Debug
+        if let expense = expense {
+            print("📝 AddExpenseView init en mode ÉDITION")
+            print("   • ID de la dépense: \(expense.id)")
+            print("   • Montant actuel: \(expense.amount)")
+            print("   • Date actuelle: \(expense.date)")
+            print("   • Note actuelle: \(expense.note ?? "nil")")
+        } else {
+            print("➕ AddExpenseView init en mode CRÉATION")
+        }
+        
+        // Formater avec une virgule pour le format français
+        if let expense = expense {
+            let formattedAmount = String(format: "%.2f", expense.amount).replacingOccurrences(of: ".", with: ",")
+            _amount = State(initialValue: formattedAmount)
+        } else {
+            _amount = State(initialValue: "")
+        }
+        
         _note = State(initialValue: expense?.note ?? "")
         _date = State(initialValue: expense?.date ?? Date())
     }
@@ -40,42 +58,53 @@ struct AddExpenseView: View {
                 Section {
                     HStack {
                         Text("Solde restant")
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                         Spacer()
-                        Text(voucher.remainingBalance, format: .currency(code: "EUR"))
+                        Text(voucher.remainingBalance.formattedEuro)
+                            .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundStyle(voucher.remainingBalance > 0 ? .primary : .red)
+                            .foregroundColor(voucher.remainingBalance > 0 ? .primary : .red)
                     }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     
                     if let initial = voucher.amount {
                         HStack {
                             Text("Montant initial")
-                                .foregroundStyle(.secondary)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                             Spacer()
-                            Text(initial, format: .currency(code: "EUR"))
-                                .foregroundStyle(.secondary)
+                            Text(initial.formattedEuro)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                         }
-                        .font(.caption)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                 } header: {
                     Text("Solde")
                 }
                 
                 Section {
-                    HStack {
+                    HStack(spacing: 12) {
                         Text("€")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                        TextField("Montant", text: $amount)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        TextField("0,00", text: $amount)
+                            .font(.subheadline)
                             .keyboardType(.decimalPad)
-                            .font(.title2)
                             .multilineTextAlignment(.trailing)
                     }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     
                     DatePicker("Date", selection: $date, displayedComponents: [.date])
+                        .environment(\.locale, Locale(identifier: "fr_FR"))
+                        .environment(\.dynamicTypeSize, .small)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     
                     TextField("Note (optionnel)", text: $note, axis: .vertical)
+                        .font(.subheadline)
                         .lineLimit(2...4)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 } header: {
                     Text("Dépense")
                 }
@@ -94,6 +123,7 @@ struct AddExpenseView: View {
                     }
                 }
             }
+            .environment(\.dynamicTypeSize, .medium)
             .navigationTitle(isEditing ? "Modifier la dépense" : "Nouvelle dépense")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -138,34 +168,41 @@ struct AddExpenseView: View {
         let adjustedBalance = voucher.remainingBalance + currentExpenseAmount
         
         if expenseAmount > adjustedBalance {
-            errorMessage = "Le montant dépasse le solde restant (\(adjustedBalance.formatted(.currency(code: "EUR"))))"
+            errorMessage = "Le montant dépasse le solde restant (\(adjustedBalance.formattedEuro))"
             showingError = true
             return
         }
         
         if let existing = existingExpense {
             // Édition
+            print("🔄 Modification de la dépense existante (ID: \(existing.id))")
             existing.amount = expenseAmount
             existing.date = date
             existing.note = note.isEmpty ? nil : note
+            print("   ✓ Montant mis à jour: \(expenseAmount)")
+            print("   ✓ Date mise à jour: \(date)")
+            print("   ✓ Note mise à jour: \(note.isEmpty ? "nil" : note)")
         } else {
             // Création
+            print("➕ Création d'une nouvelle dépense")
             let expense = Expense(
                 amount: expenseAmount,
                 date: date,
-                note: note.isEmpty ? nil : note,
-                voucher: voucher
+                note: note.isEmpty ? nil : note
             )
+            expense.voucher = voucher
             modelContext.insert(expense)
-            voucher.expenses.append(expense)
+            print("   ✓ Nouvelle dépense créée (ID: \(expense.id))")
         }
         
         do {
             try modelContext.save()
+            print("💾 Dépense sauvegardée avec succès")
             dismiss()
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
+            print("❌ Erreur de sauvegarde: \(error)")
         }
     }
     

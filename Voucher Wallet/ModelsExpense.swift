@@ -16,11 +16,10 @@ final class Expense {
     var note: String?
     var voucher: Voucher?
     
-    init(id: UUID = UUID(), amount: Double, date: Date = Date(), note: String? = nil, voucher: Voucher? = nil) {
+    init(id: UUID = UUID(), amount: Double, date: Date = Date(), note: String? = nil) {
         self.id = id
         self.amount = amount
         self.date = date
         self.note = note
-        self.voucher = voucher
     }
 }

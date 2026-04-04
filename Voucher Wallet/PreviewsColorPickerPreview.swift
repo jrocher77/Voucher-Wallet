@@ -46,7 +46,7 @@ struct ColorPickerPreview: View {
                                             .fill(Color(hex: preset.hex))
                                             .frame(width: 44, height: 44)
                                             .overlay {
-                                                if preset.hex == selectedColor.toHex() {
+                                                if selectedColor.isSimilar(to: Color(hex: preset.hex)) {
                                                     Circle()
                                                         .stroke(Color.primary, lineWidth: 3)
                                                 }

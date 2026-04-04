@@ -36,6 +36,7 @@ struct AddVoucherView: View {
     @State private var codeType: CodeType = .barcode
     @State private var expirationDate: Date?
     @State private var hasExpirationDate = false
+    @State private var selectedColor = Color(hex: "#007AFF")
     
     enum AddMethod {
         case scan
@@ -105,6 +106,17 @@ struct AddVoucherView: View {
                 allowsMultipleSelection: false
             ) { result in
                 handleFileImport(result)
+            }
+            .sheet(isPresented: $showingVoucherEditor) {
+                if let voucher = editingVoucher {
+                    VoucherEditorView(
+                        voucher: voucher,
+                        onSave: { updatedVoucher in
+                            updateVoucher(updatedVoucher)
+                            showingVoucherEditor = false
+                        }
+                    )
+                }
             }
             .alert("Erreur", isPresented: $showingError) {
                 Button("OK", role: .cancel) { }
@@ -219,15 +231,20 @@ struct AddVoucherView: View {
             ForEach(detectedVouchers) { voucher in
                 VoucherSelectionRowCompact(
                     voucher: voucher,
-                    isSelected: selectedVoucherIds.contains(voucher.id)
-                ) {
-                    toggleSelection(voucher.id)
-                }
+                    isSelected: selectedVoucherIds.contains(voucher.id),
+                    onTap: {
+                        toggleSelection(voucher.id)
+                    },
+                    onEdit: {
+                        editingVoucher = voucher
+                        showingVoucherEditor = true
+                    }
+                )
             }
         } header: {
             Text("Bons détectés")
         } footer: {
-            Text("Sélectionnez les bons que vous souhaitez importer. Vous pourrez les modifier individuellement après l'import.")
+            Text("Appuyez sur un bon pour le modifier, ou sur le cercle pour le sélectionner/désélectionner.")
         }
     }
     
@@ -256,6 +273,43 @@ struct AddVoucherView: View {
     
     private var voucherFormSection: some View {
         Group {
+            // Afficher le score de confiance si disponible
+            if let result = analysisResult,
+               let detectedName = result.detectedStoreName,
+               result.storeNameConfidence > 0 {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Enseigne détectée")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            HStack(spacing: 8) {
+                                Text(detectedName)
+                                    .font(.headline)
+                                
+                                confidenceBadge(for: result.storeNameConfidence)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        if result.storeNameConfidence < 0.7 {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.title3)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    
+                    if result.storeNameConfidence < 0.7 {
+                        Text("La détection automatique n'est pas très sûre. Vérifiez le nom de l'enseigne.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            
             Section("Informations du bon") {
                 TextField("Enseigne", text: $storeName)
                 
@@ -327,17 +381,52 @@ struct AddVoucherView: View {
                         ),
                         displayedComponents: .date
                     )
+                    .environment(\.locale, Locale(identifier: "fr_FR"))
                     
                     if let result = analysisResult, !result.possibleDates.isEmpty {
                         Menu("Dates suggérées") {
                             ForEach(result.possibleDates, id: \.self) { date in
-                                Button(date.formatted(date: .long, time: .omitted)) {
+                                Button(date.frenchLongFormat) {
                                     expirationDate = date
                                 }
                             }
                         }
                         .font(.caption)
                     }
+                }
+            }
+            
+            Section("Couleur de la carte") {
+                ColorPicker("Couleur", selection: $selectedColor, supportsOpacity: false)
+                
+                // Préréglages de couleurs populaires
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                            Button {
+                                selectedColor = Color(hex: preset.hex)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color(hex: preset.hex))
+                                        .frame(width: 44, height: 44)
+                                        .overlay {
+                                            if selectedColor.isSimilar(to: Color(hex: preset.hex)) {
+                                                Circle()
+                                                    .stroke(Color.primary, lineWidth: 3)
+                                            }
+                                        }
+                                    
+                                    Text(preset.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
                 }
             }
         }
@@ -364,6 +453,12 @@ struct AddVoucherView: View {
             selectedVoucherIds.remove(id)
         } else {
             selectedVoucherIds.insert(id)
+        }
+    }
+    
+    private func updateVoucher(_ updatedVoucher: PDFAnalyzer.DetectedVoucher) {
+        if let index = detectedVouchers.firstIndex(where: { $0.id == updatedVoucher.id }) {
+            detectedVouchers[index] = updatedVoucher
         }
     }
     
@@ -426,6 +521,20 @@ struct AddVoucherView: View {
                         hasExpirationDate = true
                     }
                     
+                    // Appliquer la couleur du bon détecté
+                    if let hexColor = singleVoucher.storeColor {
+                        selectedColor = Color(hex: hexColor)
+                    } else {
+                        selectedColor = Color(hex: StorePreset.getColor(for: storeName))
+                    }
+                    
+                    // 🔧 Copier les infos de détection dans analysisResult pour afficher le badge
+                    analysisResult?.detectedStoreName = singleVoucher.storeName
+                    analysisResult?.storeNameConfidence = singleVoucher.storeNameConfidence
+                    
+                    print("  ✓ Store: \(storeName)")
+                    print("  ✓ Confidence: \(String(format: "%.0f%%", singleVoucher.storeNameConfidence * 100))")
+                    
                     return
                 }
                 
@@ -435,6 +544,7 @@ struct AddVoucherView: View {
                 // Pré-remplir le nom de l'enseigne si détecté
                 if let detectedStore = result.detectedStoreName {
                     storeName = detectedStore
+                    selectedColor = Color(hex: StorePreset.getColor(for: detectedStore))
                 }
                 
                 // Pré-remplir les champs avec les résultats
@@ -475,6 +585,9 @@ struct AddVoucherView: View {
         let vouchersToImport = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
         
         for detectedVoucher in vouchersToImport {
+            // Utiliser la couleur du bon détecté ou la couleur par défaut pour l'enseigne
+            let colorHex = detectedVoucher.storeColor ?? StorePreset.getColor(for: detectedVoucher.storeName ?? "")
+            
             let voucher = Voucher(
                 storeName: detectedVoucher.storeName ?? "Bon d'achat",
                 amount: detectedVoucher.amount,
@@ -484,14 +597,23 @@ struct AddVoucherView: View {
                 codeImageData: detectedVoucher.codeImageData,
                 expirationDate: detectedVoucher.expirationDate,
                 pdfData: selectedPDFData,
-                storeColor: StorePreset.getColor(for: detectedVoucher.storeName ?? "")
+                storeColor: colorHex
             )
             
             modelContext.insert(voucher)
+            
+            // 📚 Apprentissage : enregistrer chaque enseigne validée
+            if let storeName = detectedVoucher.storeName {
+                StoreNameLearning.shared.learnStoreName(storeName)
+                
+                // 🎨 Apprentissage : enregistrer la préférence de couleur
+                StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+            }
         }
         
         do {
             try modelContext.save()
+            print("✅ \(vouchersToImport.count) bon(s) importé(s) avec succès")
             dismiss()
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
@@ -508,6 +630,8 @@ struct AddVoucherView: View {
             codeImage = BarcodeGenerator.generateBarcode(from: voucherNumber)
         }
         
+        let colorHex = selectedColor.toHex()
+        
         let voucher = Voucher(
             storeName: storeName,
             amount: Double(amount),
@@ -517,17 +641,60 @@ struct AddVoucherView: View {
             codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
             expirationDate: hasExpirationDate ? expirationDate : nil,
             pdfData: selectedPDFData,
-            storeColor: StorePreset.getColor(for: storeName)
+            storeColor: colorHex
         )
         
         modelContext.insert(voucher)
         
         do {
             try modelContext.save()
+            
+            // 📚 Apprentissage : enregistrer le nom de l'enseigne validé
+            let detectedName = analysisResult?.detectedStoreName
+            StoreNameLearning.shared.learnStoreName(storeName, detectedAs: detectedName)
+            
+            // 🎨 Apprentissage : enregistrer la préférence de couleur
+            StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+            
             dismiss()
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
+        }
+    }
+    
+    // MARK: - UI Helpers
+    
+    /// Crée un badge visuel pour afficher le score de confiance
+    @ViewBuilder
+    private func confidenceBadge(for confidence: Double) -> some View {
+        let percentage = Int(confidence * 100)
+        let (color, icon) = confidenceStyle(for: confidence)
+        
+        HStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+            Text("\(percentage)%")
+                .font(.system(size: 10, weight: .medium))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.15))
+        .foregroundStyle(color)
+        .clipShape(Capsule())
+    }
+    
+    /// Retourne la couleur et l'icône selon le score de confiance
+    private func confidenceStyle(for confidence: Double) -> (Color, String) {
+        switch confidence {
+        case 0.8...1.0:
+            return (.green, "checkmark.circle.fill")
+        case 0.6..<0.8:
+            return (.blue, "checkmark.circle")
+        case 0.4..<0.6:
+            return (.orange, "exclamationmark.circle")
+        default:
+            return (.red, "questionmark.circle")
         }
     }
 }
@@ -538,21 +705,32 @@ struct VoucherSelectionRowCompact: View {
     let voucher: PDFAnalyzer.DetectedVoucher
     let isSelected: Bool
     let onTap: () -> Void
+    let onEdit: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Checkbox
+        HStack(spacing: 12) {
+            // Checkbox
+            Button(action: onTap) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
                     .foregroundStyle(isSelected ? .blue : .gray)
-                
-                // Info du bon
+            }
+            .buttonStyle(.plain)
+            
+            // Info du bon (cliquable pour éditer)
+            Button(action: onEdit) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(voucher.storeName ?? "Bon d'achat")
-                            .font(.body)
-                            .fontWeight(.medium)
+                        HStack(spacing: 6) {
+                            Text(voucher.storeName ?? "Bon d'achat")
+                                .font(.body)
+                                .fontWeight(.medium)
+                            
+                            // Badge de confiance
+                            if voucher.storeNameConfidence > 0 {
+                                confidenceBadge(for: voucher.storeNameConfidence)
+                            }
+                        }
                         
                         Spacer()
                         
@@ -561,6 +739,10 @@ struct VoucherSelectionRowCompact: View {
                                 .font(.subheadline)
                                 .foregroundStyle(.blue)
                         }
+                        
+                        Image(systemName: "pencil.circle")
+                            .font(.body)
+                            .foregroundStyle(.blue)
                     }
                     
                     HStack(spacing: 8) {
@@ -584,9 +766,215 @@ struct VoucherSelectionRowCompact: View {
                         .lineLimit(1)
                 }
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+    }
+    
+    /// Badge de confiance pour la détection de l'enseigne
+    @ViewBuilder
+    private func confidenceBadge(for confidence: Double) -> some View {
+        let percentage = Int(confidence * 100)
+        let (color, icon) = confidenceStyle(for: confidence)
+        
+        HStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+            Text("\(percentage)%")
+                .font(.system(size: 10, weight: .medium))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.15))
+        .foregroundStyle(color)
+        .clipShape(Capsule())
+    }
+    
+    /// Style selon le score de confiance
+    private func confidenceStyle(for confidence: Double) -> (Color, String) {
+        switch confidence {
+        case 0.8...1.0:
+            return (.green, "checkmark.circle.fill")
+        case 0.6..<0.8:
+            return (.blue, "checkmark.circle")
+        case 0.4..<0.6:
+            return (.orange, "exclamationmark.circle")
+        default:
+            return (.red, "questionmark.circle")
+        }
+    }
+}
+
+// MARK: - Voucher Editor View
+
+struct VoucherEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    let voucher: PDFAnalyzer.DetectedVoucher
+    let onSave: (PDFAnalyzer.DetectedVoucher) -> Void
+    
+    @State private var storeName: String
+    @State private var amount: String
+    @State private var voucherNumber: String
+    @State private var pinCode: String
+    @State private var codeType: CodeType
+    @State private var expirationDate: Date?
+    @State private var hasExpirationDate: Bool
+    @State private var selectedColor: Color
+    
+    init(voucher: PDFAnalyzer.DetectedVoucher, onSave: @escaping (PDFAnalyzer.DetectedVoucher) -> Void) {
+        self.voucher = voucher
+        self.onSave = onSave
+        
+        _storeName = State(initialValue: voucher.storeName ?? "")
+        _amount = State(initialValue: voucher.amount != nil ? String(format: "%.2f", voucher.amount!) : "")
+        _voucherNumber = State(initialValue: voucher.voucherNumber)
+        _pinCode = State(initialValue: voucher.pinCode ?? "")
+        _codeType = State(initialValue: voucher.codeType)
+        _expirationDate = State(initialValue: voucher.expirationDate)
+        _hasExpirationDate = State(initialValue: voucher.expirationDate != nil)
+        
+        // Initialiser la couleur à partir du hex stocké ou utiliser la couleur par défaut
+        if let hexColor = voucher.storeColor {
+            _selectedColor = State(initialValue: Color(hex: hexColor))
+        } else {
+            let defaultHex = StorePreset.getColor(for: voucher.storeName ?? "")
+            _selectedColor = State(initialValue: Color(hex: defaultHex))
+        }
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Informations du bon") {
+                    TextField("Enseigne", text: $storeName)
+                    
+                    TextField("Montant (optionnel)", text: $amount)
+                        .keyboardType(.decimalPad)
+                    
+                    TextField("Numéro du bon", text: $voucherNumber)
+                        .textContentType(.none)
+                        .autocorrectionDisabled()
+                    
+                    TextField("Code PIN (optionnel)", text: $pinCode)
+                        .textContentType(.none)
+                        .autocorrectionDisabled()
+                }
+                
+                Section("Type de code") {
+                    Picker("Type", selection: $codeType) {
+                        Label("Code-barres", systemImage: "barcode")
+                            .tag(CodeType.barcode)
+                        Label("QR Code", systemImage: "qrcode")
+                            .tag(CodeType.qrCode)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                
+                Section("Date d'expiration") {
+                    Toggle("Ajouter une date d'expiration", isOn: $hasExpirationDate)
+                    
+                    if hasExpirationDate {
+                        DatePicker(
+                            "Date",
+                            selection: Binding(
+                                get: { expirationDate ?? Date() },
+                                set: { expirationDate = $0 }
+                            ),
+                            displayedComponents: .date
+                        )
+                        .environment(\.locale, Locale(identifier: "fr_FR"))
+                    }
+                }
+                
+                Section("Couleur de la carte") {
+                    ColorPicker("Couleur", selection: $selectedColor, supportsOpacity: false)
+                    
+                    // Préréglages de couleurs populaires
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                                Button {
+                                    selectedColor = Color(hex: preset.hex)
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Circle()
+                                            .fill(Color(hex: preset.hex))
+                                            .frame(width: 44, height: 44)
+                                            .overlay {
+                                                if selectedColor.isSimilar(to: Color(hex: preset.hex)) {
+                                                    Circle()
+                                                        .stroke(Color.primary, lineWidth: 3)
+                                                }
+                                            }
+                                        
+                                        Text(preset.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                
+                Section {
+                    HStack {
+                        Label("Page \(voucher.pageNumber)", systemImage: "doc.text")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Modifier le bon")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annuler") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Enregistrer") {
+                        saveChanges()
+                    }
+                    .disabled(storeName.isEmpty || voucherNumber.isEmpty)
+                }
+            }
+        }
+    }
+    
+    private func saveChanges() {
+        // Générer l'image du code si le numéro ou type a changé
+        var codeImageData = voucher.codeImageData
+        if voucherNumber != voucher.voucherNumber || codeType != voucher.codeType {
+            let codeImage: UIImage?
+            if codeType == .qrCode {
+                codeImage = BarcodeGenerator.generateQRCode(from: voucherNumber)
+            } else {
+                codeImage = BarcodeGenerator.generateBarcode(from: voucherNumber)
+            }
+            codeImageData = codeImage.flatMap { BarcodeGenerator.imageToData($0) }
+        }
+        
+        let updatedVoucher = PDFAnalyzer.DetectedVoucher(
+            id: voucher.id,
+            pageNumber: voucher.pageNumber,
+            voucherNumber: voucherNumber,
+            codeType: codeType,
+            storeName: storeName.isEmpty ? nil : storeName,
+            amount: Double(amount),
+            pinCode: pinCode.isEmpty ? nil : pinCode,
+            expirationDate: hasExpirationDate ? expirationDate : nil,
+            codeImageData: codeImageData,
+            storeColor: selectedColor.toHex()
+        )
+        
+        onSave(updatedVoucher)
+        dismiss()
     }
 }
 

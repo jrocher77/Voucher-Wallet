@@ -43,6 +43,9 @@ class StoreNameLearning {
             saveStoreNameMapping(from: detected, to: storeName)
             print("🔗 Association créée: \"\(detected)\" → \"\(storeName)\"")
         }
+        
+        // Mettre à jour les statistiques dans les Réglages iOS
+        updateSettingsStatistics()
     }
     
     /// Récupère la liste des enseignes apprises
@@ -194,7 +197,8 @@ class StoreNameLearning {
         return [
             "learnedStores": getLearnedStoreNames(),
             "storeCounts": getStoreCounts(),
-            "mappings": getStoreNameMappings()
+            "mappings": getStoreNameMappings(),
+            "storeColors": getStoreColors()
         ]
     }
     
@@ -203,6 +207,113 @@ class StoreNameLearning {
         UserDefaults.standard.removeObject(forKey: userDefaultsKey)
         UserDefaults.standard.removeObject(forKey: storeCountKey)
         UserDefaults.standard.removeObject(forKey: mappingKey)
+        UserDefaults.standard.removeObject(forKey: storeColorsKey)
         print("🗑️ Données d'apprentissage réinitialisées")
     }
+    
+    // MARK: - Apprentissage des couleurs
+    
+    private let storeColorsKey = "storeColors"
+    
+    /// Enregistre la couleur choisie par l'utilisateur pour une enseigne
+    /// - Parameters:
+    ///   - colorHex: Code hexadécimal de la couleur (ex: "#FF0000")
+    ///   - storeName: Nom de l'enseigne
+    func learnStoreColor(_ colorHex: String, for storeName: String) {
+        var storeColors = getStoreColors()
+        
+        // Normaliser le nom de l'enseigne (insensible à la casse)
+        let normalizedName = storeName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Récupérer l'historique des couleurs pour cette enseigne
+        var colorHistory = storeColors[normalizedName] ?? [:]
+        
+        // Incrémenter le compteur pour cette couleur
+        colorHistory[colorHex, default: 0] += 1
+        
+        // Sauvegarder
+        storeColors[normalizedName] = colorHistory
+        saveStoreColors(storeColors)
+        
+        print("🎨 Couleur apprise: \(colorHex) pour \(storeName) (utilisé \(colorHistory[colorHex]!) fois)")
+        
+        // Mettre à jour les statistiques dans les Réglages iOS
+        updateSettingsStatistics()
+    }
+    
+    /// Récupère la couleur la plus fréquemment utilisée pour une enseigne
+    /// - Parameter storeName: Nom de l'enseigne
+    /// - Returns: Code hexadécimal de la couleur préférée, ou nil si aucune préférence
+    func getLearnedColor(for storeName: String) -> String? {
+        let storeColors = getStoreColors()
+        let normalizedName = storeName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard let colorHistory = storeColors[normalizedName],
+              !colorHistory.isEmpty else {
+            return nil
+        }
+        
+        // Trouver la couleur la plus utilisée
+        let mostUsedColor = colorHistory.max(by: { $0.value < $1.value })
+        
+        // Ne retourner que si la couleur a été utilisée au moins 2 fois
+        // (pour éviter les choix accidentels)
+        if let (color, count) = mostUsedColor, count >= 2 {
+            print("🎨 Couleur préférée pour \(storeName): \(color) (\(count) utilisations)")
+            return color
+        }
+        
+        return nil
+    }
+    
+    /// Récupère toutes les statistiques de couleurs pour une enseigne
+    /// - Parameter storeName: Nom de l'enseigne
+    /// - Returns: Dictionnaire [couleur: nombre d'utilisations]
+    func getColorStatistics(for storeName: String) -> [String: Int] {
+        let storeColors = getStoreColors()
+        let normalizedName = storeName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        return storeColors[normalizedName] ?? [:]
+    }
+    
+    /// Récupère tous les apprentissages de couleurs
+    private func getStoreColors() -> [String: [String: Int]] {
+        return UserDefaults.standard.dictionary(forKey: storeColorsKey) as? [String: [String: Int]] ?? [:]
+    }
+    
+    /// Sauvegarde les apprentissages de couleurs
+    private func saveStoreColors(_ colors: [String: [String: Int]]) {
+        UserDefaults.standard.set(colors, forKey: storeColorsKey)
+    }
+    
+    /// Obtient la couleur recommandée pour une enseigne
+    /// Combine la couleur apprise et la couleur prédéfinie
+    /// - Parameter storeName: Nom de l'enseigne
+    /// - Returns: Code hexadécimal de la couleur recommandée
+    func getRecommendedColor(for storeName: String) -> String {
+        // 1. D'abord, vérifier si l'utilisateur a une préférence apprise
+        if let learnedColor = getLearnedColor(for: storeName) {
+            return learnedColor
+        }
+        
+        // 2. Sinon, utiliser la couleur prédéfinie (si disponible)
+        // Cette ligne utilise StorePreset qui doit être importé
+        // Si ce n'est pas possible ici, on retourne une couleur par défaut
+        // et on laisse l'appelant gérer StorePreset
+        return "#007AFF" // Couleur par défaut bleu iOS
+    }
+    
+    // MARK: - Synchronisation avec les Réglages iOS
+    
+    /// Met à jour les statistiques affichées dans les Réglages iOS
+    private func updateSettingsStatistics() {
+        // Vérifier que SettingsManager existe pour éviter les dépendances circulaires
+        // Cette notification sera captée par SettingsManager
+        NotificationCenter.default.post(name: .learningDataDidChange, object: nil)
+    }
+}
+
+// MARK: - Notification Name Extension
+
+extension Notification.Name {
+    static let learningDataDidChange = Notification.Name("learningDataDidChange")
 }

@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
 /// Gestionnaire pour synchroniser les données d'apprentissage avec les Réglages iOS
 class SettingsManager: ObservableObject {
@@ -19,7 +20,7 @@ class SettingsManager: ObservableObject {
     private let topStore1Key = "top_store_1"
     private let topStore2Key = "top_store_2"
     private let topStore3Key = "top_store_3"
-    private let resetTriggerKey = "reset_learning_trigger"
+    private let resetRequestedKey = "reset_learning_requested"
     
     @Published var shouldShowResetConfirmation = false
     
@@ -32,6 +33,14 @@ class SettingsManager: ObservableObject {
             self,
             selector: #selector(userDefaultsDidChange),
             name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+        
+        // Observer les changements dans les données d'apprentissage
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(learningDataDidChange),
+            name: .learningDataDidChange,
             object: nil
         )
     }
@@ -49,7 +58,7 @@ class SettingsManager: ObservableObject {
             topStore1Key: "-",
             topStore2Key: "-",
             topStore3Key: "-",
-            resetTriggerKey: "Réinitialiser l'apprentissage",
+            resetRequestedKey: false,
             "version_preference": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         ]
         
@@ -108,17 +117,46 @@ class SettingsManager: ObservableObject {
     // MARK: - Détection de la demande de réinitialisation
     
     @objc private func userDefaultsDidChange(_ notification: Notification) {
-        // Vérifier si l'utilisateur a touché le bouton de réinitialisation
-        // Dans les Réglages iOS, on ne peut pas vraiment détecter un tap sur PSTitleValueSpecifier
-        // Il faut donc utiliser une autre approche : surveiller quand l'app revient au premier plan
+        // Pas besoin de gérer ici, on vérifie dans checkForResetRequest()
+    }
+    
+    @objc private func learningDataDidChange(_ notification: Notification) {
+        // Mettre à jour les statistiques quand les données d'apprentissage changent
+        updateSettingsStatistics()
     }
     
     /// Vérifie si une réinitialisation a été demandée depuis les Réglages iOS
     /// Cette méthode doit être appelée quand l'app devient active
     func checkForResetRequest() {
-        // Note : Avec PSTitleValueSpecifier seul, on ne peut pas détecter un tap
-        // L'utilisateur doit ouvrir l'app après avoir vu les réglages
-        // Une alternative serait d'ajouter un PSToggleSwitchSpecifier
+        let resetRequested = UserDefaults.standard.bool(forKey: resetRequestedKey)
+        print("🔍 Vérification reset: \(resetRequested)")
+        
+        if resetRequested {
+            print("✅ Reset demandé, déclenchement de l'alerte")
+            // Déclencher l'alerte de confirmation
+            DispatchQueue.main.async {
+                self.shouldShowResetConfirmation = true
+            }
+        }
+    }
+    
+    /// Effectue la réinitialisation et réinitialise le toggle dans les Réglages
+    func performReset() {
+        StoreNameLearning.shared.resetLearningData()
+        
+        // Remettre le toggle à OFF
+        UserDefaults.standard.set(false, forKey: resetRequestedKey)
+        
+        // Mettre à jour les statistiques (elles seront à zéro)
+        updateSettingsStatistics()
+        
+        print("✅ Réinitialisation effectuée depuis les Réglages iOS")
+    }
+    
+    /// Annule la demande de réinitialisation (remet le toggle à OFF)
+    func cancelReset() {
+        print("❌ Réinitialisation annulée")
+        UserDefaults.standard.set(false, forKey: resetRequestedKey)
     }
 }
 

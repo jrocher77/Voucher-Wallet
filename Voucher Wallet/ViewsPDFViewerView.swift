@@ -12,6 +12,7 @@ import PDFKit
 struct PDFViewerView: View {
     let pdfData: Data
     @Environment(\.dismiss) private var dismiss
+    @State private var showingShareSheet = false
     
     var body: some View {
         NavigationStack {
@@ -27,10 +28,15 @@ struct PDFViewerView: View {
                     }
                     
                     ToolbarItem(placement: .topBarLeading) {
-                        ShareLink(item: PDFDocument(data: pdfData) ?? PDFDocument(), preview: SharePreview("Bon d'achat")) {
+                        Button {
+                            showingShareSheet = true
+                        } label: {
                             Image(systemName: "square.and.arrow.up")
                         }
                     }
+                }
+                .sheet(isPresented: $showingShareSheet) {
+                    ShareSheetView(items: [pdfData])
                 }
         }
     }

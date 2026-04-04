@@ -23,4 +23,32 @@ extension Color {
         }
         self.init(.sRGB, red: Double(r)/255, green: Double(g)/255, blue: Double(b)/255, opacity: Double(a)/255)
     }
+    
+    /// Convertit une couleur en code hexadécimal
+    /// - Returns: Code couleur au format "#RRGGBB"
+    func toHex() -> String {
+        guard let components = UIColor(self).cgColor.components else {
+            return "#007AFF"
+        }
+        
+        let r = components[0]
+        let g = components[1]
+        let b = components[2]
+        
+        return String(
+            format: "#%02X%02X%02X",
+            Int(r * 255),
+            Int(g * 255),
+            Int(b * 255)
+        )
+    }
+    
+    /// Compare deux couleurs en comparant leurs codes hex normalisés
+    /// - Parameter other: L'autre couleur à comparer
+    /// - Returns: True si les couleurs sont identiques (ou très similaires)
+    func isSimilar(to other: Color) -> Bool {
+        let thisHex = self.toHex().uppercased()
+        let otherHex = other.toHex().uppercased()
+        return thisHex == otherHex
+    }
 }

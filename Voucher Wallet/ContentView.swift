@@ -10,6 +10,7 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(URLHandler.self) var urlHandler
     @Query(sort: \Voucher.dateAdded, order: .reverse) private var vouchers: [Voucher]
     
     @State private var showingAddVoucher = false
@@ -71,7 +72,19 @@ struct ContentView: View {
             .sheet(isPresented: $showingAddVoucher) {
                 AddVoucherView()
             }
+            .sheet(isPresented: Binding(
+                get: { urlHandler.shouldShowImport },
+                set: { if !$0 { 
+                    urlHandler.shouldShowImport = false
+                    urlHandler.pdfData = nil
+                }}
+            )) {
+                if let pdfData = urlHandler.pdfData {
+                    PDFImportHandler(pdfData: pdfData)
+                }
+            }
         }
+        .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
     }
     
     private var emptyStateView: some View {
@@ -154,4 +167,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .modelContainer(PreviewData.shared.container)
+        .environment(URLHandler())
 }

@@ -20,7 +20,18 @@ struct PDFImportHandler: View {
     @State private var showingError = false
     @State private var errorMessage = ""
     
-    // Champs du formulaire
+    // États pour la progression de l'analyse
+    @State private var progressMessage = "Chargement du PDF..."
+    @State private var progressValue: Double = 0.0
+    @State private var totalPages: Int = 1
+    
+    // Pour la gestion multi-bons
+    @State private var detectedVouchers: [PDFAnalyzer.DetectedVoucher] = []
+    @State private var selectedVoucherIds: Set<UUID> = []
+    @State private var editingVoucher: PDFAnalyzer.DetectedVoucher?
+    @State private var showingVoucherEditor = false
+    
+    // Champs du formulaire (pour un seul bon)
     @State private var storeName = ""
     @State private var amount = ""
     @State private var voucherNumber = ""
@@ -28,19 +39,38 @@ struct PDFImportHandler: View {
     @State private var codeType: CodeType = .barcode
     @State private var expirationDate: Date?
     @State private var hasExpirationDate = false
+    @State private var selectedColor = Color(hex: "#007AFF")
+    
+    // Mode d'affichage : formulaire unique ou sélection multiple
+    private var showingMultipleVouchers: Bool {
+        detectedVouchers.count > 1
+    }
     
     var body: some View {
         NavigationStack {
             Form {
                 if isAnalyzing {
                     Section {
-                        HStack {
-                            ProgressView()
-                            Text("Analyse du PDF en cours...")
-                                .foregroundStyle(.secondary)
+                        VStack(spacing: 16) {
+                            // Barre de progression
+                            ProgressView(value: progressValue, total: 1.0)
+                                .progressViewStyle(.linear)
+                                .tint(.blue)
+                            
+                            // Message de progression
+                            VStack(spacing: 4) {
+                                Text(progressMessage)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                
+                                Text("\(Int(progressValue * 100))%")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
                         }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
                 } else {
                     if let result = analysisResult {
@@ -48,11 +78,22 @@ struct PDFImportHandler: View {
                             Label("PDF analysé avec succès", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                                 .fontWeight(.semibold)
+                            
+                            if showingMultipleVouchers {
+                                Text("\(detectedVouchers.count) bons détectés")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     
-                    // Formulaire
-                    voucherFormSection
+                    // Afficher la liste des bons si plusieurs détectés
+                    if showingMultipleVouchers {
+                        multipleVouchersSection
+                    } else {
+                        // Sinon, afficher le formulaire classique
+                        voucherFormSection
+                    }
                 }
             }
             .navigationTitle("Nouveau Bon")
@@ -65,10 +106,17 @@ struct PDFImportHandler: View {
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Enregistrer") {
-                        saveVoucher()
+                    if showingMultipleVouchers {
+                        Button("Importer (\(selectedVoucherIds.count))") {
+                            importSelectedVouchers()
+                        }
+                        .disabled(selectedVoucherIds.isEmpty)
+                    } else {
+                        Button("Enregistrer") {
+                            saveVoucher()
+                        }
+                        .disabled(isAnalyzing || !isFormValid)
                     }
-                    .disabled(isAnalyzing || !isFormValid)
                 }
             }
             .task {
@@ -79,11 +127,59 @@ struct PDFImportHandler: View {
             } message: {
                 Text(errorMessage)
             }
+            .sheet(isPresented: $showingVoucherEditor) {
+                if let voucher = editingVoucher {
+                    VoucherEditorView(
+                        voucher: voucher,
+                        onSave: { updatedVoucher in
+                            updateVoucher(updatedVoucher)
+                            showingVoucherEditor = false
+                        }
+                    )
+                }
+            }
         }
     }
     
     private var voucherFormSection: some View {
         Group {
+            // Afficher le score de confiance si disponible
+            if let result = analysisResult,
+               let detectedName = result.detectedStoreName,
+               result.storeNameConfidence > 0 {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Enseigne détectée")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            
+                            HStack(spacing: 8) {
+                                Text(detectedName)
+                                    .font(.headline)
+                                
+                                confidenceBadge(for: result.storeNameConfidence)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        if result.storeNameConfidence < 0.7 {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.title3)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    
+                    if result.storeNameConfidence < 0.7 {
+                        Text("La détection automatique n'est pas très sûre. Vérifiez le nom de l'enseigne.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            
             Section("Informations du bon") {
                 TextField("Enseigne", text: $storeName)
                 
@@ -134,6 +230,115 @@ struct PDFImportHandler: View {
                     )
                 }
             }
+            
+            Section("Couleur de la carte") {
+                ColorPicker("Couleur", selection: $selectedColor, supportsOpacity: false)
+                
+                // Préréglages de couleurs populaires
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                            Button {
+                                selectedColor = Color(hex: preset.hex)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color(hex: preset.hex))
+                                        .frame(width: 44, height: 44)
+                                        .overlay {
+                                            if selectedColor.isSimilar(to: Color(hex: preset.hex)) {
+                                                Circle()
+                                                    .stroke(Color.primary, lineWidth: 3)
+                                            }
+                                        }
+                                    
+                                    Text(preset.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+    
+    private var multipleVouchersSection: some View {
+        Section {
+            ForEach(detectedVouchers) { voucher in
+                HStack {
+                    // Checkbox
+                    Button {
+                        toggleSelection(voucher.id)
+                    } label: {
+                        Image(systemName: selectedVoucherIds.contains(voucher.id) ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(selectedVoucherIds.contains(voucher.id) ? .blue : .gray)
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(voucher.storeName ?? "Enseigne inconnue")
+                                .font(.headline)
+                            
+                            // Badge de confiance
+                            if voucher.storeNameConfidence > 0 {
+                                confidenceBadge(for: voucher.storeNameConfidence)
+                            }
+                        }
+                        
+                        Text(voucher.voucherNumber)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .foregroundStyle(.secondary)
+                        
+                        if let amount = voucher.amount {
+                            Text(amount.formattedEuro)
+                                .font(.subheadline)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Bouton modifier
+                    Button {
+                        editingVoucher = voucher
+                        showingVoucherEditor = true
+                    } label: {
+                        Image(systemName: "pencil.circle")
+                            .foregroundStyle(.blue)
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    toggleSelection(voucher.id)
+                }
+            }
+            
+            // Bouton pour tout sélectionner/désélectionner
+            Button {
+                if selectedVoucherIds.count == detectedVouchers.count {
+                    selectedVoucherIds.removeAll()
+                } else {
+                    selectedVoucherIds = Set(detectedVouchers.map { $0.id })
+                }
+            } label: {
+                HStack {
+                    Image(systemName: selectedVoucherIds.count == detectedVouchers.count ? "checkmark.circle.fill" : "circle")
+                    Text(selectedVoucherIds.count == detectedVouchers.count ? "Tout désélectionner" : "Tout sélectionner")
+                }
+            }
+        } header: {
+            Text("Sélectionnez les bons à importer")
         }
     }
     
@@ -141,47 +346,192 @@ struct PDFImportHandler: View {
         !storeName.isEmpty && !voucherNumber.isEmpty
     }
     
+    // MARK: - Actions Multi-Bons
+    
+    private func toggleSelection(_ id: UUID) {
+        if selectedVoucherIds.contains(id) {
+            selectedVoucherIds.remove(id)
+        } else {
+            selectedVoucherIds.insert(id)
+        }
+    }
+    
+    private func updateVoucher(_ updatedVoucher: PDFAnalyzer.DetectedVoucher) {
+        if let index = detectedVouchers.firstIndex(where: { $0.id == updatedVoucher.id }) {
+            detectedVouchers[index] = updatedVoucher
+        }
+    }
+    
+    private func importSelectedVouchers() {
+        let selectedVouchers = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
+        
+        for detectedVoucher in selectedVouchers {
+            let codeImage: UIImage?
+            if detectedVoucher.codeType == .qrCode {
+                codeImage = BarcodeGenerator.generateQRCode(from: detectedVoucher.voucherNumber)
+            } else {
+                codeImage = BarcodeGenerator.generateBarcode(from: detectedVoucher.voucherNumber)
+            }
+            
+            // Utiliser la couleur du bon détecté ou la couleur par défaut pour l'enseigne
+            let colorHex = detectedVoucher.storeColor ?? StorePreset.getColor(for: detectedVoucher.storeName ?? "")
+            
+            let voucher = Voucher(
+                storeName: detectedVoucher.storeName ?? "Enseigne inconnue",
+                amount: detectedVoucher.amount,
+                voucherNumber: detectedVoucher.voucherNumber,
+                pinCode: detectedVoucher.pinCode,
+                codeType: detectedVoucher.codeType,
+                codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
+                expirationDate: detectedVoucher.expirationDate,
+                pdfData: pdfData,
+                storeColor: colorHex
+            )
+            
+            modelContext.insert(voucher)
+            
+            // 📚 Apprentissage : enregistrer chaque enseigne validée
+            if let storeName = detectedVoucher.storeName {
+                StoreNameLearning.shared.learnStoreName(storeName)
+                
+                // 🎨 Apprentissage : enregistrer la préférence de couleur
+                StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+            }
+        }
+        
+        do {
+            try modelContext.save()
+            print("✅ \(selectedVouchers.count) bon(s) importé(s) avec succès")
+            dismiss()
+        } catch {
+            errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
+            showingError = true
+        }
+    }
+    
+    // MARK: - Analyse PDF
+    
     private func analyzePDF() async {
         do {
-            let result = try await PDFAnalyzer.analyzePDF(data: pdfData)
+            print("🔍 PDFImportHandler - Starting PDF analysis...")
+            
+            // Passer le handler de progression
+            let result = try await PDFAnalyzer.analyzePDF(data: pdfData) { progress in
+                // Mettre à jour l'UI avec la progression
+                progressMessage = progress.userMessage
+                progressValue = progress.progress(totalPages: totalPages)
+                
+                // Extraire le nombre total de pages si disponible
+                if case .analyzingPage(_, let total) = progress {
+                    totalPages = total
+                }
+            }
             
             await MainActor.run {
                 analysisResult = result
                 
-                // Pré-remplir le nom de l'enseigne si détecté
-                if let detectedStore = result.detectedStoreName {
-                    storeName = detectedStore
+                print("📊 Analysis result:")
+                print("  - Detected vouchers: \(result.detectedVouchers.count)")
+                print("  - Detected store: \(result.detectedStoreName ?? "nil")")
+                print("  - Voucher numbers: \(result.possibleVoucherNumbers)")
+                print("  - PIN codes: \(result.possiblePinCodes)")
+                print("  - Amounts: \(result.possibleAmounts)")
+                print("  - Dates: \(result.possibleDates)")
+                print("  - Barcodes: \(result.barcodes.count)")
+                print("  - QR codes: \(result.qrCodes.count)")
+                
+                // Si plusieurs bons détectés, préparer la sélection
+                if result.detectedVouchers.count > 1 {
+                    print("🎉 \(result.detectedVouchers.count) bons détectés - Mode multi-sélection")
+                    detectedVouchers = result.detectedVouchers
+                    // Sélectionner tous par défaut
+                    selectedVoucherIds = Set(detectedVouchers.map { $0.id })
+                    isAnalyzing = false
+                    return
                 }
                 
-                // Pré-remplir les champs
-                if let firstNumber = result.possibleVoucherNumbers.first {
-                    voucherNumber = firstNumber
-                }
-                
-                if let firstPin = result.possiblePinCodes.first {
-                    pinCode = firstPin
-                }
-                
-                if let firstAmount = result.possibleAmounts.first {
-                    amount = String(format: "%.2f", firstAmount)
-                }
-                
-                if let firstDate = result.possibleDates.first {
-                    expirationDate = firstDate
-                    hasExpirationDate = true
-                }
-                
-                // Déterminer le type de code
-                if !result.qrCodes.isEmpty && result.barcodes.isEmpty {
-                    codeType = .qrCode
-                } else if !result.barcodes.isEmpty && result.qrCodes.isEmpty {
-                    codeType = .barcode
+                // Si un seul bon complet a été détecté, utiliser ses données
+                if let singleVoucher = result.detectedVouchers.first {
+                    print("✅ Bon complet détecté, pré-remplissage avec ses données")
+                    storeName = singleVoucher.storeName ?? ""
+                    voucherNumber = singleVoucher.voucherNumber
+                    pinCode = singleVoucher.pinCode ?? ""
+                    codeType = singleVoucher.codeType
+                    
+                    if let amount = singleVoucher.amount {
+                        self.amount = String(format: "%.2f", amount)
+                    }
+                    
+                    if let expDate = singleVoucher.expirationDate {
+                        expirationDate = expDate
+                        hasExpirationDate = true
+                    }
+                    
+                    // Appliquer la couleur du bon détecté
+                    if let hexColor = singleVoucher.storeColor {
+                        selectedColor = Color(hex: hexColor)
+                    } else {
+                        selectedColor = Color(hex: StorePreset.getColor(for: storeName))
+                    }
+                    
+                    // 🔧 Copier les infos de détection dans analysisResult pour afficher le badge
+                    analysisResult?.detectedStoreName = singleVoucher.storeName
+                    analysisResult?.storeNameConfidence = singleVoucher.storeNameConfidence
+                    
+                    print("  ✓ Store: \(storeName)")
+                    print("  ✓ Number: \(voucherNumber)")
+                    print("  ✓ PIN: \(pinCode)")
+                    print("  ✓ Amount: \(self.amount)")
+                    print("  ✓ Confidence: \(String(format: "%.0f%%", singleVoucher.storeNameConfidence * 100))")
+                } else {
+                    // Sinon, utiliser les suggestions individuelles (ancien comportement)
+                    print("⚠️ Aucun bon complet détecté, utilisation des suggestions")
+                    
+                    // Pré-remplir le nom de l'enseigne si détecté
+                    if let detectedStore = result.detectedStoreName {
+                        storeName = detectedStore
+                        selectedColor = Color(hex: StorePreset.getColor(for: detectedStore))
+                        print("✅ Store name set to: \(detectedStore)")
+                    }
+                    
+                    // Pré-remplir les champs
+                    if let firstNumber = result.possibleVoucherNumbers.first {
+                        voucherNumber = firstNumber
+                        print("✅ Voucher number set to: \(firstNumber)")
+                    }
+                    
+                    if let firstPin = result.possiblePinCodes.first {
+                        pinCode = firstPin
+                        print("✅ PIN code set to: \(firstPin)")
+                    }
+                    
+                    if let firstAmount = result.possibleAmounts.first {
+                        amount = String(format: "%.2f", firstAmount)
+                        print("✅ Amount set to: \(firstAmount)")
+                    }
+                    
+                    if let firstDate = result.possibleDates.first {
+                        expirationDate = firstDate
+                        hasExpirationDate = true
+                        print("✅ Expiration date set to: \(firstDate)")
+                    }
+                    
+                    // Déterminer le type de code
+                    if !result.qrCodes.isEmpty && result.barcodes.isEmpty {
+                        codeType = .qrCode
+                        print("✅ Code type set to: QR Code")
+                    } else if !result.barcodes.isEmpty && result.qrCodes.isEmpty {
+                        codeType = .barcode
+                        print("✅ Code type set to: Barcode")
+                    }
                 }
                 
                 isAnalyzing = false
+                print("✅ PDF analysis completed")
             }
         } catch {
             await MainActor.run {
+                print("❌ PDF analysis error: \(error.localizedDescription)")
                 errorMessage = "Erreur lors de l'analyse : \(error.localizedDescription)"
                 showingError = true
                 isAnalyzing = false
@@ -197,6 +547,8 @@ struct PDFImportHandler: View {
             codeImage = BarcodeGenerator.generateBarcode(from: voucherNumber)
         }
         
+        let colorHex = selectedColor.toHex()
+        
         let voucher = Voucher(
             storeName: storeName,
             amount: Double(amount),
@@ -206,17 +558,60 @@ struct PDFImportHandler: View {
             codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
             expirationDate: hasExpirationDate ? expirationDate : nil,
             pdfData: pdfData,
-            storeColor: StorePreset.getColor(for: storeName)
+            storeColor: colorHex
         )
         
         modelContext.insert(voucher)
         
         do {
             try modelContext.save()
+            
+            // 📚 Apprentissage : enregistrer le nom de l'enseigne validé
+            let detectedName = analysisResult?.detectedStoreName
+            StoreNameLearning.shared.learnStoreName(storeName, detectedAs: detectedName)
+            
+            // 🎨 Apprentissage : enregistrer la préférence de couleur
+            StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+            
             dismiss()
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
+        }
+    }
+    
+    // MARK: - UI Helpers
+    
+    /// Crée un badge visuel pour afficher le score de confiance
+    @ViewBuilder
+    private func confidenceBadge(for confidence: Double) -> some View {
+        let percentage = Int(confidence * 100)
+        let (color, icon) = confidenceStyle(for: confidence)
+        
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text("Confiance \(percentage)%")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.15))
+        .foregroundStyle(color)
+        .clipShape(Capsule())
+    }
+    
+    /// Retourne la couleur et l'icône selon le score de confiance
+    private func confidenceStyle(for confidence: Double) -> (Color, String) {
+        switch confidence {
+        case 0.8...1.0:
+            return (.green, "checkmark.circle.fill")
+        case 0.6..<0.8:
+            return (.blue, "checkmark.circle")
+        case 0.4..<0.6:
+            return (.orange, "exclamationmark.circle")
+        default:
+            return (.red, "questionmark.circle")
         }
     }
 }

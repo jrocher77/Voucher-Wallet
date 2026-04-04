@@ -21,6 +21,7 @@ struct EditVoucherView: View {
     @State private var codeType: CodeType
     @State private var expirationDate: Date?
     @State private var hasExpirationDate: Bool
+    @State private var selectedColor: Color
     
     @State private var showingError = false
     @State private var errorMessage = ""
@@ -35,6 +36,7 @@ struct EditVoucherView: View {
         _codeType = State(initialValue: voucher.codeType)
         _expirationDate = State(initialValue: voucher.expirationDate)
         _hasExpirationDate = State(initialValue: voucher.expirationDate != nil)
+        _selectedColor = State(initialValue: Color(hex: voucher.storeColor))
     }
     
     var body: some View {
@@ -83,6 +85,41 @@ struct EditVoucherView: View {
                             ),
                             displayedComponents: .date
                         )
+                        .environment(\.locale, Locale(identifier: "fr_FR"))
+                    }
+                }
+                
+                Section("Couleur de la carte") {
+                    ColorPicker("Couleur", selection: $selectedColor, supportsOpacity: false)
+                    
+                    // Préréglages de couleurs populaires
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                                Button {
+                                    selectedColor = Color(hex: preset.hex)
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Circle()
+                                            .fill(Color(hex: preset.hex))
+                                            .frame(width: 44, height: 44)
+                                            .overlay {
+                                                if preset.hex == selectedColor.toHex() {
+                                                    Circle()
+                                                        .stroke(Color.primary, lineWidth: 3)
+                                                }
+                                            }
+                                        
+                                        Text(preset.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 8)
                     }
                 }
                 
@@ -93,7 +130,7 @@ struct EditVoucherView: View {
                         Text("Ajouté le")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(voucher.dateAdded.formatted(date: .abbreviated, time: .omitted))
+                        Text(voucher.dateAdded.frenchAbbreviatedFormat)
                             .foregroundStyle(.secondary)
                     }
                     .font(.caption)
@@ -136,8 +173,12 @@ struct EditVoucherView: View {
         voucher.codeType = codeType
         voucher.expirationDate = hasExpirationDate ? expirationDate : nil
         
-        // Mettre à jour la couleur si l'enseigne a changé
-        voucher.storeColor = StorePreset.getColor(for: storeName)
+        // Mettre à jour la couleur
+        let newColorHex = selectedColor.toHex()
+        voucher.storeColor = newColorHex
+        
+        // 🎨 Apprentissage : enregistrer la préférence de couleur
+        StoreNameLearning.shared.learnStoreColor(newColorHex, for: storeName)
         
         // Régénérer le code si nécessaire
         if codeType != voucher.codeType || voucherNumber != voucher.voucherNumber {

@@ -22,10 +22,20 @@ struct VoucherCardView: View {
                 Spacer()
                 
                 if let amount = voucher.amount {
-                    Text(amount, format: .currency(code: "EUR"))
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.white)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        // Solde restant (principal)
+                        Text(voucher.remainingBalance.formattedEuro)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.white)
+                        
+                        // Montant initial (petit)
+                        if voucher.totalExpenses > 0 {
+                            Text("sur \(amount.formattedEuro)")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                    }
                 }
             }
             
@@ -38,6 +48,8 @@ struct VoucherCardView: View {
                     .foregroundStyle(.white.opacity(0.8))
                 Text(voucher.voucherNumber)
                     .font(.system(.body, design: .monospaced))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .foregroundStyle(.white)
             }
             
@@ -49,6 +61,8 @@ struct VoucherCardView: View {
                         .foregroundStyle(.white.opacity(0.8))
                     Text(pin)
                         .font(.system(.body, design: .monospaced))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(.white)
                 }
             }
@@ -58,7 +72,7 @@ struct VoucherCardView: View {
                 HStack {
                     Image(systemName: "clock")
                         .font(.caption)
-                    Text("Expire le \(expiration, format: .dateTime.day().month().year())")
+                    Text("Expire le \(expiration.frenchLongFormat)")
                         .font(.caption)
                 }
                 .foregroundStyle(.white.opacity(0.9))
@@ -70,33 +84,6 @@ struct VoucherCardView: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color(hex: voucher.storeColor))
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
-        )
-    }
-}
-
-// Extension pour convertir hex en Color
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (255, 0, 0, 0)
-        }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
         )
     }
 }

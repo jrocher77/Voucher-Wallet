@@ -10,36 +10,32 @@ import SwiftUI
 /// Modifier qui surveille les demandes de réinitialisation depuis les Réglages iOS
 struct SettingsMonitorModifier: ViewModifier {
     
-    @StateObject private var settingsManager = SettingsManager.shared
     @Environment(\.scenePhase) private var scenePhase
     
     @State private var showingResetConfirmation = false
     @State private var showingResetSuccess = false
+    @State private var hasCheckedOnAppear = false
     
     func body(content: Content) -> some View {
         content
-            .onChange(of: scenePhase) { oldPhase, newPhase in
-                if newPhase == .active {
-                    // Mettre à jour les statistiques
-                    settingsManager.refreshOnAppActivation()
-                    
-                    // Vérifier si une réinitialisation a été demandée
-                    settingsManager.checkForResetRequest()
-                }
+            .onAppear {
+                print("✨ SettingsMonitorModifier - onAppear")
+                checkForReset()
             }
-            .onChange(of: settingsManager.shouldShowResetConfirmation) { _, shouldShow in
-                if shouldShow {
-                    showingResetConfirmation = true
-                    // Remettre à false pour éviter de redemander
-                    settingsManager.shouldShowResetConfirmation = false
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                print("🔄 ScenePhase changé: \(oldPhase) → \(newPhase)")
+                
+                if newPhase == .active {
+                    print("🔄 App devient active - Vérification des réglages...")
+                    checkForReset()
                 }
             }
             .alert("Réinitialiser l'apprentissage ?", isPresented: $showingResetConfirmation) {
                 Button("Annuler", role: .cancel) {
-                    settingsManager.cancelReset()
+                    SettingsManager.shared.cancelReset()
                 }
                 Button("Réinitialiser", role: .destructive) {
-                    settingsManager.performReset()
+                    SettingsManager.shared.performReset()
                     showingResetSuccess = true
                 }
             } message: {
@@ -50,6 +46,22 @@ struct SettingsMonitorModifier: ViewModifier {
             } message: {
                 Text("Toutes les données d'apprentissage ont été supprimées.")
             }
+    }
+    
+    // MARK: - Helpers
+    
+    private func checkForReset() {
+        // Mettre à jour les statistiques
+        SettingsManager.shared.refreshOnAppActivation()
+        
+        // Vérifier si une réinitialisation a été demandée
+        let resetRequested = UserDefaults.standard.bool(forKey: "reset_learning_requested")
+        print("📊 Reset demandé ? \(resetRequested)")
+        
+        if resetRequested {
+            print("⚠️ Affichage de l'alerte de réinitialisation")
+            showingResetConfirmation = true
+        }
     }
 }
 

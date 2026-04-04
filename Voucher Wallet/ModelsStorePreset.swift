@@ -31,19 +31,24 @@ struct StorePreset {
     ]
     
     static func getColor(for storeName: String) -> String {
-        // Recherche exacte
+        // 1. D'abord, vérifier si l'utilisateur a appris une préférence de couleur
+        if let learnedColor = StoreNameLearning.shared.getLearnedColor(for: storeName) {
+            return learnedColor
+        }
+        
+        // 2. Recherche exacte dans les presets
         if let color = presets[storeName] {
             return color
         }
         
-        // Recherche partielle (si le nom contient l'enseigne)
+        // 3. Recherche partielle (si le nom contient l'enseigne)
         for (preset, color) in presets {
             if storeName.localizedCaseInsensitiveContains(preset) {
                 return color
             }
         }
         
-        // Couleur par défaut
+        // 4. Couleur par défaut
         return "#007AFF"
     }
 }

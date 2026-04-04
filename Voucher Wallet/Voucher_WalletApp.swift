@@ -10,42 +10,49 @@ import SwiftData
 
 @main
 struct Voucher_WalletApp: App {
-    @State private var importedPDFData: Data?
-    @State private var showingPDFImport = false
+    @State private var urlHandler = URLHandler()
+    
+    // Initialiser le SettingsManager au démarrage
+    init() {
+        // Force l'initialisation du singleton
+        _ = SettingsManager.shared
+        print("🚀 App démarrée - SettingsManager initialisé")
+    }
+    
+    // Container SwiftData avec les deux modèles et synchronisation iCloud
+    let modelContainer: ModelContainer = {
+        do {
+            let schema = Schema([Voucher.self, Expense.self])
+            
+            // Configuration avec détection automatique d'iCloud
+            // Si iCloud est disponible, il sera utilisé automatiquement
+            // Sinon, les données seront stockées localement
+            let modelConfiguration = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                cloudKitDatabase: .none // On démarre en mode local
+            )
+            
+            // Pour activer iCloud plus tard :
+            // 1. Ajoutez la capability "iCloud" avec CloudKit dans le projet
+            // 2. Changez .none en .automatic ci-dessus
+            // Les données locales seront automatiquement migrées vers iCloud
+            
+            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+        } catch {
+            fatalError("Could not create ModelContainer: \(error)")
+        }
+    }()
     
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .sheet(isPresented: $showingPDFImport) {
-                    if let pdfData = importedPDFData {
-                        PDFImportHandler(pdfData: pdfData)
-                            .onDisappear {
-                                importedPDFData = nil
-                            }
-                    }
-                }
+                .environment(urlHandler)
                 .onOpenURL { url in
-                    handleIncomingURL(url)
+                    print("🔵 App received URL: \(url)")
+                    urlHandler.handleURL(url)
                 }
         }
-        .modelContainer(for: Voucher.self)
-    }
-    
-    private func handleIncomingURL(_ url: URL) {
-        // Vérifier que c'est un PDF
-        guard url.pathExtension.lowercased() == "pdf" else { return }
-        
-        do {
-            // Accéder au fichier
-            if url.startAccessingSecurityScopedResource() {
-                defer { url.stopAccessingSecurityScopedResource() }
-                
-                let data = try Data(contentsOf: url)
-                importedPDFData = data
-                showingPDFImport = true
-            }
-        } catch {
-            print("Erreur lors de l'import du PDF : \(error)")
-        }
+        .modelContainer(modelContainer)
     }
 }

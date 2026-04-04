@@ -22,6 +22,21 @@ final class Voucher {
     var pdfData: Data?
     var storeColor: String // Hex color code
     
+    @Relationship(deleteRule: .cascade, inverse: \Expense.voucher)
+    var expenses: [Expense] = []
+    
+    // Propriété calculée pour le solde restant
+    var remainingBalance: Double {
+        guard let initialAmount = amount else { return 0 }
+        let totalExpenses = expenses.reduce(0) { $0 + $1.amount }
+        return initialAmount - totalExpenses
+    }
+    
+    // Propriété calculée pour le total des dépenses
+    var totalExpenses: Double {
+        expenses.reduce(0) { $0 + $1.amount }
+    }
+    
     init(
         id: UUID = UUID(),
         storeName: String,

@@ -12,8 +12,27 @@ struct VoucherDetailView: View {
     let voucher: Voucher
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var brightness: Double = UIScreen.main.brightness
     @State private var showingDeleteAlert = false
+    @State private var showingPDFViewer = false
+    @State private var showingShareSheet = false
+    @State private var showingEditView = false
+    @State private var expenseToPresent: ExpensePresentation?
+    
+    enum ExpensePresentation: Identifiable {
+        case new
+        case edit(Expense)
+        
+        var id: String {
+            switch self {
+            case .new:
+                return "new"
+            case .edit(let expense):
+                return expense.id.uuidString
+            }
+        }
+    }
     
     var isExpired: Bool {
         guard let expiration = voucher.expirationDate else { return false }
@@ -35,6 +54,30 @@ struct VoucherDetailView: View {
                 // Section code-barres/QR code
                 codeSection
                 
+                // Bouton Ajouter une dépense (si montant existe)
+                if voucher.amount != nil {
+                    Button(action: {
+                        expenseToPresent = .new
+                    }) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text("Ajouter une dépense")
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green.opacity(0.1))
+                        .foregroundColor(.green)
+                        .cornerRadius(12)
+                    }
+                    .padding(.horizontal)
+                }
+                
+                // Section Solde et dépenses (si montant existe)
+                if voucher.amount != nil {
+                    balanceSection
+                }
+                
                 // Informations détaillées
                 detailsSection
                 
@@ -49,6 +92,14 @@ struct VoucherDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        showingEditView = true
+                    } label: {
+                        Label("Modifier", systemImage: "pencil")
+                    }
+                    
+                    Divider()
+                    
                     Button(role: .destructive) {
                         showingDeleteAlert = true
                     } label: {
@@ -74,7 +125,32 @@ struct VoucherDetailView: View {
         }
         .onDisappear {
             // Restaurer la luminosité d'origine
-            UIScreen.main.brightness = brightness
+            restoreBrightness()
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            // Restaurer la luminosité quand l'app passe en arrière-plan
+            if newPhase == .background || newPhase == .inactive {
+                restoreBrightness()
+            }
+        }
+        .sheet(isPresented: $showingPDFViewer) {
+            if let pdfData = voucher.pdfData {
+                PDFViewerView(pdfData: pdfData)
+            }
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareSheetView(items: createShareItems())
+        }
+        .sheet(isPresented: $showingEditView) {
+            EditVoucherView(voucher: voucher)
+        }
+        .sheet(item: $expenseToPresent) { presentation in
+            switch presentation {
+            case .new:
+                AddExpenseView(voucher: voucher)
+            case .edit(let expense):
+                AddExpenseView(voucher: voucher, expense: expense)
+            }
         }
     }
     
@@ -84,7 +160,7 @@ struct VoucherDetailView: View {
             Text("Ce bon est expiré")
                 .fontWeight(.semibold)
         }
-        .foregroundStyle(.white)
+        .foregroundColor(.white)
         .frame(maxWidth: .infinity)
         .padding()
         .background(Color.red)
@@ -148,6 +224,8 @@ struct VoucherDetailView: View {
                 Text(voucher.voucherNumber)
                     .font(.system(.title3, design: .monospaced))
                     .fontWeight(.medium)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                     .textSelection(.enabled)
             }
             .padding()
@@ -176,7 +254,7 @@ struct VoucherDetailView: View {
                     DetailRow(
                         icon: "eurosign.circle",
                         title: "Montant",
-                        value: amount.formatted(.currency(code: "EUR"))
+                        value: amount.formattedEuro
                     )
                 }
                 
@@ -197,7 +275,7 @@ struct VoucherDetailView: View {
                     DetailRow(
                         icon: "calendar",
                         title: "Date d'expiration",
-                        value: expiration.formatted(date: .long, time: .omitted)
+                        value: expiration.frenchLongFormat
                     )
                 }
                 
@@ -206,7 +284,7 @@ struct VoucherDetailView: View {
                 DetailRow(
                     icon: "calendar.badge.plus",
                     title: "Ajouté le",
-                    value: voucher.dateAdded.formatted(date: .long, time: .omitted)
+                    value: voucher.dateAdded.frenchLongFormat
                 )
             }
             .background(Color(.systemBackground))
@@ -217,9 +295,21 @@ struct VoucherDetailView: View {
     
     private var actionsSection: some View {
         VStack(spacing: 12) {
+            Button {
+                showingEditView = true
+            } label: {
+                Label("Modifier le bon", systemImage: "pencil")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundColor(.blue)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+            
             if voucher.pdfData != nil {
                 Button {
-                    // TODO: Ouvrir le PDF
+                    showingPDFViewer = true
                 } label: {
                     Label("Voir le PDF original", systemImage: "doc.text")
                         .frame(maxWidth: .infinity)
@@ -231,7 +321,7 @@ struct VoucherDetailView: View {
             }
             
             Button {
-                shareVoucher()
+                showingShareSheet = true
             } label: {
                 Label("Partager", systemImage: "square.and.arrow.up")
                     .frame(maxWidth: .infinity)
@@ -242,6 +332,28 @@ struct VoucherDetailView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal)
+    }
+    
+    // MARK: - Balance Section
+    
+    private var balanceSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Historique des dépenses
+            if !voucher.expenses.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Historique")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    ForEach(voucher.expenses.sorted(by: { $0.date > $1.date })) { expense in
+                        ExpenseRow(expense: expense, modelContext: modelContext) {
+                            expenseToPresent = .edit(expense)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+        }
     }
     
     private func generateCodeImage() -> UIImage? {
@@ -256,13 +368,50 @@ struct VoucherDetailView: View {
     }
     
     private func shareVoucher() {
-        // TODO: Implémenter le partage
+        // Obsolète - remplacé par le ShareSheet
+    }
+    
+    private func createShareItems() -> [Any] {
+        var items: [Any] = []
+        
+        // Ajouter le texte avec les infos du bon
+        var text = """
+        Bon d'achat \(voucher.storeName)
+        Numéro: \(voucher.voucherNumber)
+        """
+        
+        if let amount = voucher.amount {
+            text += "\nMontant: \(amount.formattedEuro)"
+        }
+        
+        if let pin = voucher.pinCode {
+            text += "\nCode PIN: \(pin)"
+        }
+        
+        items.append(text)
+        
+        // Ajouter l'image du code-barres
+        if let codeImageData = voucher.codeImageData,
+           let codeImage = BarcodeGenerator.dataToImage(codeImageData) {
+            items.append(codeImage)
+        }
+        
+        // Ajouter le PDF si disponible
+        if let pdfData = voucher.pdfData {
+            items.append(pdfData)
+        }
+        
+        return items
     }
     
     private func deleteVoucher() {
         modelContext.delete(voucher)
         try? modelContext.save()
         dismiss()
+    }
+    
+    private func restoreBrightness() {
+        UIScreen.main.brightness = brightness
     }
 }
 
@@ -309,6 +458,90 @@ struct DetailRow: View {
             Spacer()
         }
         .padding()
+    }
+}
+
+// MARK: - Expense Row
+
+struct ExpenseRow: View {
+    let expense: Expense
+    let modelContext: ModelContext
+    let onEdit: () -> Void
+    
+    @State private var showingDeleteAlert = false
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(expense.date.frenchLongFormat)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                
+                if let note = expense.note, !note.isEmpty {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+            
+            Text("- \(expense.amount.formattedEuro)")
+                .font(.body)
+                .fontWeight(.semibold)
+                .foregroundColor(.red)
+            
+            Menu {
+                Button {
+                    onEdit()
+                } label: {
+                    Label("Modifier", systemImage: "pencil")
+                }
+                
+                Button(role: .destructive) {
+                    showingDeleteAlert = true
+                } label: {
+                    Label("Supprimer", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundColor(.blue)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .alert("Supprimer cette dépense ?", isPresented: $showingDeleteAlert) {
+            Button("Annuler", role: .cancel) { }
+            Button("Supprimer", role: .destructive) {
+                deleteExpense()
+            }
+        } message: {
+            Text("Cette action est irréversible.")
+        }
+    }
+    
+    private func deleteExpense() {
+        modelContext.delete(expense)
+        try? modelContext.save()
+    }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheetView: UIViewControllerRepresentable {
+    let items: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: items,
+            applicationActivities: nil
+        )
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // Pas de mise à jour nécessaire
     }
 }
 

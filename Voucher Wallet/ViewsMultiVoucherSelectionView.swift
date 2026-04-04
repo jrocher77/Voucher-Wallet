@@ -129,10 +129,16 @@ struct MultiVoucherSelectionView: View {
             )
             
             modelContext.insert(voucher)
+            
+            // 📚 Apprentissage : enregistrer chaque enseigne validée
+            if let storeName = detectedVoucher.storeName {
+                StoreNameLearning.shared.learnStoreName(storeName)
+            }
         }
         
         do {
             try modelContext.save()
+            print("✅ \(vouchersToImport.count) bon(s) importé(s) avec succès")
             dismiss()
         } catch {
             print("❌ Erreur lors de l'enregistrement: \(error)")
@@ -156,13 +162,20 @@ struct VoucherSelectionRow: View {
                 // Info du bon
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(voucher.storeName ?? "Bon d'achat")
-                            .font(.headline)
+                        HStack(spacing: 6) {
+                            Text(voucher.storeName ?? "Bon d'achat")
+                                .font(.headline)
+                            
+                            // Badge de confiance
+                            if voucher.storeNameConfidence > 0 {
+                                confidenceBadge(for: voucher.storeNameConfidence)
+                            }
+                        }
                         
                         Spacer()
                         
                         if let amount = voucher.amount {
-                            Text(amount, format: .currency(code: "EUR"))
+                            Text(amount.formattedEuro)
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.blue)
@@ -186,7 +199,7 @@ struct VoucherSelectionRow: View {
                         }
                         
                         if let expiration = voucher.expirationDate {
-                            Label(expiration.formatted(date: .abbreviated, time: .omitted), 
+                            Label(expiration.frenchAbbreviatedFormat, 
                                   systemImage: "calendar")
                                 .font(.caption2)
                         }
@@ -207,6 +220,39 @@ struct VoucherSelectionRow: View {
             )
         }
         .buttonStyle(.plain)
+    }
+    
+    /// Badge de confiance pour la détection de l'enseigne
+    @ViewBuilder
+    private func confidenceBadge(for confidence: Double) -> some View {
+        let percentage = Int(confidence * 100)
+        let (color, icon) = confidenceStyle(for: confidence)
+        
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text("Confiance \(percentage)%")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(color.opacity(0.15))
+        .foregroundStyle(color)
+        .clipShape(Capsule())
+    }
+    
+    /// Style selon le score de confiance
+    private func confidenceStyle(for confidence: Double) -> (Color, String) {
+        switch confidence {
+        case 0.8...1.0:
+            return (.green, "checkmark.circle.fill")
+        case 0.6..<0.8:
+            return (.blue, "checkmark.circle")
+        case 0.4..<0.6:
+            return (.orange, "exclamationmark.circle")
+        default:
+            return (.red, "questionmark.circle")
+        }
     }
 }
 

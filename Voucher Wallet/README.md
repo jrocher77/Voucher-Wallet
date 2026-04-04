@@ -1,4 +1,4 @@
-# Voucher Wallet - Guide de Développement
+# Voucher Wallet - Guide de Développement -
 
 ## 📱 Vue d'ensemble
 

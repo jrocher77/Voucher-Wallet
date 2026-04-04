@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Statistiques d'apprentissage</string>
+			<key>FooterText</key>
+			<string>Ces statistiques sont mises à jour automatiquement.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>Enseignes mémorisées</string>
+			<key>Key</key>
+			<string>learned_stores_count</string>
+			<key>DefaultValue</key>
+			<string>0</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>Préférences de couleurs</string>
+			<key>Key</key>
+			<string>color_preferences_count</string>
+			<key>DefaultValue</key>
+			<string>0</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string>Enseignes favorites</string>
+			<key>FooterText</key>
+			<string>Les enseignes que vous utilisez le plus souvent.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>1ère place</string>
+			<key>Key</key>
+			<string>top_store_1</string>
+			<key>DefaultValue</key>
+			<string>-</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>2ème place</string>
+			<key>Key</key>
+			<string>top_store_2</string>
+			<key>DefaultValue</key>
+			<string>-</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSTitleValueSpecifier</string>
+			<key>Title</key>
+			<string>3ème place</string>
+			<key>Key</key>
+			<string>top_store_3</string>
+			<key>DefaultValue</key>
+			<string>-</string>
+		</dict>
+	</array>
+	<key>StringsTable</key>
+	<string>Statistics</string>
+</dict>
+</plist>

@@ -25,6 +25,8 @@ struct AddVoucherView: View {
     // Pour la gestion multi-bons
     @State private var detectedVouchers: [PDFAnalyzer.DetectedVoucher] = []
     @State private var selectedVoucherIds: Set<UUID> = []
+    @State private var editingVoucher: PDFAnalyzer.DetectedVoucher?
+    @State private var showingVoucherEditor = false
     
     // Champs du formulaire (pour un seul bon)
     @State private var storeName = ""
@@ -38,6 +40,11 @@ struct AddVoucherView: View {
     enum AddMethod {
         case scan
         case manual
+    }
+    
+    // Mode d'affichage : formulaire unique ou sélection multiple
+    private var showingMultipleVouchers: Bool {
+        detectedVouchers.count > 1
     }
     
     var body: some View {
@@ -56,12 +63,18 @@ struct AddVoucherView: View {
                 
                 if addMethod == .scan {
                     scanSection
+                    
+                    // Afficher la liste des bons si plusieurs détectés
+                    if showingMultipleVouchers {
+                        multipleVouchersSection
+                    } else {
+                        // Sinon, afficher le formulaire classique
+                        voucherFormSection
+                    }
                 } else {
                     manualEntrySection
+                    voucherFormSection
                 }
-                
-                // Formulaire principal (toujours visible)
-                voucherFormSection
             }
             .navigationTitle("Nouveau Bon")
             .navigationBarTitleDisplayMode(.inline)
@@ -73,10 +86,17 @@ struct AddVoucherView: View {
                 }
                 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Enregistrer") {
-                        saveVoucher()
+                    if showingMultipleVouchers {
+                        Button("Importer (\(selectedVoucherIds.count))") {
+                            importSelectedVouchers()
+                        }
+                        .disabled(selectedVoucherIds.isEmpty)
+                    } else {
+                        Button("Enregistrer") {
+                            saveVoucher()
+                        }
+                        .disabled(!isFormValid)
                     }
-                    .disabled(!isFormValid)
                 }
             }
             .fileImporter(
@@ -85,16 +105,6 @@ struct AddVoucherView: View {
                 allowsMultipleSelection: false
             ) { result in
                 handleFileImport(result)
-            }
-            .sheet(isPresented: $showingMultiVoucherSelection) {
-                if let result = analysisResult,
-                   !result.detectedVouchers.isEmpty,
-                   let pdfData = selectedPDFData {
-                    MultiVoucherSelectionView(
-                        detectedVouchers: result.detectedVouchers,
-                        pdfData: pdfData
-                    )
-                }
             }
             .alert("Erreur", isPresented: $showingError) {
                 Button("OK", role: .cancel) { }
@@ -122,26 +132,26 @@ struct AddVoucherView: View {
                         .foregroundStyle(.green)
                         .fontWeight(.semibold)
                     
-                    if !result.barcodes.isEmpty {
-                        Text("• \(result.barcodes.count) code(s)-barres détecté(s)")
+                    if showingMultipleVouchers {
+                        Text("• \(detectedVouchers.count) bon(s) détecté(s)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                    }
-                    
-                    if !result.qrCodes.isEmpty {
-                        Text("• \(result.qrCodes.count) QR code(s) détecté(s)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    if !result.possibleVoucherNumbers.isEmpty {
-                        Text("• Numéro(s) détecté(s)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    } else {
+                        if !result.barcodes.isEmpty {
+                            Text("• \(result.barcodes.count) code(s)-barres détecté(s)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        
+                        if !result.qrCodes.isEmpty {
+                            Text("• \(result.qrCodes.count) QR code(s) détecté(s)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     
                     Button {
-                        showingDocumentPicker = true
+                        resetAndShowPicker()
                     } label: {
                         Label("Analyser un autre PDF", systemImage: "arrow.clockwise")
                     }
@@ -172,7 +182,52 @@ struct AddVoucherView: View {
         } header: {
             Text("Import PDF")
         } footer: {
-            Text("Importez le PDF de votre bon d'achat. L'application extraira automatiquement les informations.")
+            if !showingMultipleVouchers {
+                Text("Importez le PDF de votre bon d'achat. L'application extraira automatiquement les informations.")
+            }
+        }
+    }
+    
+    // MARK: - Multiple Vouchers Section
+    
+    private var multipleVouchersSection: some View {
+        Section {
+            // Bouton tout sélectionner
+            HStack {
+                Button {
+                    if selectedVoucherIds.count == detectedVouchers.count {
+                        selectedVoucherIds.removeAll()
+                    } else {
+                        selectedVoucherIds = Set(detectedVouchers.map { $0.id })
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: selectedVoucherIds.count == detectedVouchers.count ? "checkmark.square.fill" : "square")
+                        Text(selectedVoucherIds.count == detectedVouchers.count ? "Tout désélectionner" : "Tout sélectionner")
+                    }
+                }
+                .buttonStyle(.plain)
+                
+                Spacer()
+                
+                Text("\(selectedVoucherIds.count)/\(detectedVouchers.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            // Liste des bons
+            ForEach(detectedVouchers) { voucher in
+                VoucherSelectionRowCompact(
+                    voucher: voucher,
+                    isSelected: selectedVoucherIds.contains(voucher.id)
+                ) {
+                    toggleSelection(voucher.id)
+                }
+            }
+        } header: {
+            Text("Bons détectés")
+        } footer: {
+            Text("Sélectionnez les bons que vous souhaitez importer. Vous pourrez les modifier individuellement après l'import.")
         }
     }
     
@@ -296,6 +351,22 @@ struct AddVoucherView: View {
     
     // MARK: - Actions
     
+    private func resetAndShowPicker() {
+        detectedVouchers.removeAll()
+        selectedVoucherIds.removeAll()
+        analysisResult = nil
+        selectedPDFData = nil
+        showingDocumentPicker = true
+    }
+    
+    private func toggleSelection(_ id: UUID) {
+        if selectedVoucherIds.contains(id) {
+            selectedVoucherIds.remove(id)
+        } else {
+            selectedVoucherIds.insert(id)
+        }
+    }
+    
     private func handleFileImport(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
@@ -329,10 +400,12 @@ struct AddVoucherView: View {
                 analysisResult = result
                 isAnalyzing = false
                 
-                // Si plusieurs bons détectés, afficher la vue de sélection
+                // Si plusieurs bons détectés, préparer la sélection
                 if result.detectedVouchers.count > 1 {
-                    print("🎉 \(result.detectedVouchers.count) bons détectés, affichage de la sélection")
-                    showingMultiVoucherSelection = true
+                    print("🎉 \(result.detectedVouchers.count) bons détectés")
+                    detectedVouchers = result.detectedVouchers
+                    // Sélectionner tous par défaut
+                    selectedVoucherIds = Set(detectedVouchers.map { $0.id })
                     return
                 }
                 
@@ -398,6 +471,34 @@ struct AddVoucherView: View {
         }
     }
     
+    private func importSelectedVouchers() {
+        let vouchersToImport = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
+        
+        for detectedVoucher in vouchersToImport {
+            let voucher = Voucher(
+                storeName: detectedVoucher.storeName ?? "Bon d'achat",
+                amount: detectedVoucher.amount,
+                voucherNumber: detectedVoucher.voucherNumber,
+                pinCode: detectedVoucher.pinCode,
+                codeType: detectedVoucher.codeType,
+                codeImageData: detectedVoucher.codeImageData,
+                expirationDate: detectedVoucher.expirationDate,
+                pdfData: selectedPDFData,
+                storeColor: StorePreset.getColor(for: detectedVoucher.storeName ?? "")
+            )
+            
+            modelContext.insert(voucher)
+        }
+        
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
+            showingError = true
+        }
+    }
+    
     private func saveVoucher() {
         // Générer l'image du code
         let codeImage: UIImage?
@@ -428,6 +529,64 @@ struct AddVoucherView: View {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
         }
+    }
+}
+
+// MARK: - Voucher Selection Row Compact
+
+struct VoucherSelectionRowCompact: View {
+    let voucher: PDFAnalyzer.DetectedVoucher
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // Checkbox
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? .blue : .gray)
+                
+                // Info du bon
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(voucher.storeName ?? "Bon d'achat")
+                            .font(.body)
+                            .fontWeight(.medium)
+                        
+                        Spacer()
+                        
+                        if let amount = voucher.amount {
+                            Text(amount, format: .currency(code: "EUR"))
+                                .font(.subheadline)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    
+                    HStack(spacing: 8) {
+                        Label("Page \(voucher.pageNumber)", systemImage: "doc.text")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        
+                        if voucher.codeType == .qrCode {
+                            Image(systemName: "qrcode")
+                                .font(.caption)
+                        } else {
+                            Image(systemName: "barcode")
+                                .font(.caption)
+                        }
+                    }
+                    .foregroundStyle(.secondary)
+                    
+                    Text(voucher.voucherNumber)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

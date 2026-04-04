@@ -10,7 +10,7 @@ import SwiftData
 
 @Model
 final class Voucher {
-    var id: UUID
+    @Attribute(.unique) var id: UUID
     var storeName: String
     var amount: Double?
     var voucherNumber: String
@@ -21,11 +21,13 @@ final class Voucher {
     var dateAdded: Date
     var pdfData: Data?
     var storeColor: String // Hex color code
+    var textColor: String // Hex color code for text
     
     @Relationship(deleteRule: .cascade, inverse: \Expense.voucher)
     var expenses: [Expense] = []
     
     // Propriété calculée pour le solde restant
+    @Transient
     var remainingBalance: Double {
         guard let initialAmount = amount else { return 0 }
         let totalExpenses = expenses.reduce(0) { $0 + $1.amount }
@@ -33,6 +35,7 @@ final class Voucher {
     }
     
     // Propriété calculée pour le total des dépenses
+    @Transient
     var totalExpenses: Double {
         expenses.reduce(0) { $0 + $1.amount }
     }
@@ -48,7 +51,8 @@ final class Voucher {
         expirationDate: Date? = nil,
         dateAdded: Date = Date(),
         pdfData: Data? = nil,
-        storeColor: String = "#007AFF"
+        storeColor: String = "#007AFF",
+        textColor: String = "#FFFFFF"
     ) {
         self.id = id
         self.storeName = storeName
@@ -61,10 +65,11 @@ final class Voucher {
         self.dateAdded = dateAdded
         self.pdfData = pdfData
         self.storeColor = storeColor
+        self.textColor = textColor
     }
 }
 
-enum CodeType: String, Codable {
+enum CodeType: String, Codable, CaseIterable {
     case barcode
     case qrCode
 }

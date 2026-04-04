@@ -12,17 +12,16 @@ import SwiftData
 struct Voucher_WalletApp: App {
     @State private var urlHandler = URLHandler()
     
-    // Initialiser le SettingsManager au démarrage
-    init() {
-        // Force l'initialisation du singleton
-        _ = SettingsManager.shared
-        print("🚀 App démarrée - SettingsManager initialisé")
-    }
-    
     // Container SwiftData avec les deux modèles et synchronisation iCloud
-    let modelContainer: ModelContainer = {
+    let modelContainer: ModelContainer
+    
+    // Initialiser le SettingsManager et le ModelContainer au démarrage
+    init() {
+        // 1. D'abord créer le ModelContainer
         do {
+            print("🔧 Création du Schema SwiftData...")
             let schema = Schema([Voucher.self, Expense.self])
+            print("✅ Schema créé avec \(schema.entities.count) entités")
             
             // Configuration avec détection automatique d'iCloud
             // Si iCloud est disponible, il sera utilisé automatiquement
@@ -33,16 +32,34 @@ struct Voucher_WalletApp: App {
                 cloudKitDatabase: .none // On démarre en mode local
             )
             
+            print("🔧 Création du ModelContainer...")
+            
             // Pour activer iCloud plus tard :
             // 1. Ajoutez la capability "iCloud" avec CloudKit dans le projet
             // 2. Changez .none en .automatic ci-dessus
             // Les données locales seront automatiquement migrées vers iCloud
             
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            print("✅ ModelContainer créé avec succès")
+        } catch let error as NSError {
+            print("❌ Erreur lors de la création du ModelContainer:")
+            print("   Domain: \(error.domain)")
+            print("   Code: \(error.code)")
+            print("   Description: \(error.localizedDescription)")
+            print("   User Info: \(error.userInfo)")
+            if let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+                print("   Underlying error: \(underlyingError)")
+            }
+            fatalError("Could not create ModelContainer: \(error)")
         } catch {
+            print("❌ Erreur lors de la création du ModelContainer: \(error)")
             fatalError("Could not create ModelContainer: \(error)")
         }
-    }()
+        
+        // 2. Ensuite initialiser le SettingsManager
+        _ = SettingsManager.shared
+        print("🚀 App démarrée - SettingsManager initialisé")
+    }
     
     var body: some Scene {
         WindowGroup {

@@ -10,6 +10,11 @@ import SwiftUI
 struct VoucherCardView: View {
     let voucher: Voucher
     
+    // Couleur du texte à utiliser
+    private var textColor: Color {
+        Color(hex: voucher.textColor)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // En-tête avec nom de l'enseigne
@@ -17,7 +22,7 @@ struct VoucherCardView: View {
                 Text(voucher.storeName)
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(textColor)
                 
                 Spacer()
                 
@@ -27,13 +32,13 @@ struct VoucherCardView: View {
                         Text(voucher.remainingBalance.formattedEuro)
                             .font(.title3)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(textColor)
                         
                         // Montant initial (petit)
                         if voucher.totalExpenses > 0 {
                             Text("sur \(amount.formattedEuro)")
                                 .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.7))
+                                .foregroundStyle(textColor.opacity(0.7))
                         }
                     }
                 }
@@ -45,12 +50,12 @@ struct VoucherCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Numéro")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(textColor.opacity(0.8))
                 Text(voucher.voucherNumber)
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(textColor)
             }
             
             // Code PIN si disponible
@@ -58,12 +63,12 @@ struct VoucherCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Code PIN")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(textColor.opacity(0.8))
                     Text(pin)
                         .font(.system(.body, design: .monospaced))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(textColor)
                 }
             }
             
@@ -75,7 +80,7 @@ struct VoucherCardView: View {
                     Text("Expire le \(expiration.frenchLongFormat)")
                         .font(.caption)
                 }
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(textColor.opacity(0.9))
             }
         }
         .padding(20)
@@ -96,7 +101,8 @@ struct VoucherCardView: View {
         pinCode: "5678",
         codeType: .barcode,
         expirationDate: Date().addingTimeInterval(86400 * 30),
-        storeColor: "#0055A5"
+        storeColor: "#0055A5",
+        textColor: "#FFFFFF"
     ))
     .padding()
 }

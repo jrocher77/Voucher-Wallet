@@ -10,7 +10,7 @@ import SwiftData
 
 @Model
 final class Expense {
-    var id: UUID
+    @Attribute(.unique) var id: UUID
     var amount: Double
     var date: Date
     var note: String?

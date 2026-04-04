@@ -55,6 +55,17 @@ Application iOS native pour gérer vos bons d'achat type Wallet. Supporte l'impo
 - [x] Stockage du PDF original
 - [x] Support du partage depuis d'autres apps
 
+### ✅ Étape 4 : Personnalisation avancée et apprentissage
+- [x] Sélection de couleur de fond pour les cartes
+- [x] 🎨 **NOUVEAU** : Sélection de couleur de texte pour les cartes
+- [x] 🎨 **NOUVEAU** : Validation de contraste texte/fond
+- [x] 🎨 **NOUVEAU** : Aperçu en temps réel des couleurs
+- [x] 🎨 **NOUVEAU** : Apprentissage des préférences de couleur de texte
+- [x] 🎨 **NOUVEAU** : Suggestion automatique de couleur de texte selon le fond
+- [x] Préréglages de couleurs pour 15 enseignes françaises
+- [x] Système d'apprentissage des enseignes
+- [x] Score de confiance pour les détections
+
 ## 🔧 Technologies Utilisées (100% Native iOS)
 
 - **SwiftUI** : Interface utilisateur
@@ -80,7 +91,7 @@ Aucune capability spéciale n'est requise pour les fonctionnalités actuelles.
 
 ## 🚀 Prochaines Étapes Possibles
 
-### Étape 4 : Améliorations et polish
+### Étape 5 : Améliorations et polish
 - [ ] Partage de bon (Share Sheet)
 - [ ] Visualiseur PDF intégré
 - [ ] Export de liste en PDF
@@ -117,6 +128,7 @@ Voucher {
     dateAdded: Date
     pdfData: Data?
     storeColor: String (hex)
+    textColor: String (hex)  // 🎨 NOUVEAU
 }
 ```
 

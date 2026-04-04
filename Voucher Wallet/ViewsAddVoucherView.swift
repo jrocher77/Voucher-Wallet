@@ -37,6 +37,7 @@ struct AddVoucherView: View {
     @State private var expirationDate: Date?
     @State private var hasExpirationDate = false
     @State private var selectedColor = Color(hex: "#007AFF")
+    @State private var selectedTextColor = Color(hex: "#FFFFFF")
     
     enum AddMethod {
         case scan
@@ -397,27 +398,141 @@ struct AddVoucherView: View {
             }
             
             Section("Couleur de la carte") {
-                ColorPicker("Couleur", selection: $selectedColor, supportsOpacity: false)
+                ColorPicker("Couleur de fond", selection: $selectedColor, supportsOpacity: false)
+                    .onChange(of: selectedColor) { oldValue, newValue in
+                        // 🎨 Suggestion automatique de couleur de texte basée sur la couleur de fond
+                        // Seulement si les couleurs actuelles sont trop similaires
+                        if areColorsTooSimilar(newValue, selectedTextColor) {
+                            let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: newValue.toHex())
+                            selectedTextColor = Color(hex: suggestedTextColor)
+                            print("💡 Suggestion automatique de couleur de texte: \(suggestedTextColor)")
+                        }
+                    }
                 
-                // Préréglages de couleurs populaires
-                ScrollView(.horizontal, showsIndicators: false) {
+                ColorPicker("Couleur du texte", selection: $selectedTextColor, supportsOpacity: false)
+                
+                // ⚠️ Avertissement si couleurs trop similaires
+                if areColorsTooSimilar(selectedColor, selectedTextColor) {
+                    Label {
+                        Text("⚠️ Les couleurs sont identiques ou trop similaires. Le texte sera illisible.")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                }
+                
+                // ✅ Indicateur de bon contraste
+                if !areColorsTooSimilar(selectedColor, selectedTextColor) {
+                    Label {
+                        Text("Bon contraste pour la lisibilité")
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                }
+                
+                // Prévisualisation de la carte
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Aperçu")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(storeName.isEmpty ? "Enseigne" : storeName)
+                                .font(.headline)
+                                .foregroundStyle(selectedTextColor)
+                            
+                            Text(voucherNumber.isEmpty ? "1234567890" : voucherNumber)
+                                .font(.caption)
+                                .foregroundStyle(selectedTextColor.opacity(0.8))
+                        }
+                        Spacer()
+                        if let amt = Double(amount) {
+                            Text(amt.formattedEuro)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(selectedTextColor)
+                        }
+                    }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(selectedColor)
+                    )
+                }
+                
+                // Préréglages de couleurs populaires pour le fond
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Couleurs de fond populaires")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                                Button {
+                                    selectedColor = Color(hex: preset.hex)
+                                    // 🎨 Suggestion automatique de couleur de texte
+                                    let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: preset.hex)
+                                    selectedTextColor = Color(hex: suggestedTextColor)
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Circle()
+                                            .fill(Color(hex: preset.hex))
+                                            .frame(width: 44, height: 44)
+                                            .overlay {
+                                                if selectedColor.isSimilar(to: Color(hex: preset.hex)) {
+                                                    Circle()
+                                                        .stroke(Color.primary, lineWidth: 3)
+                                                }
+                                            }
+                                        
+                                        Text(preset.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                }
+                
+                // Préréglages pour la couleur de texte
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Couleurs de texte populaires")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    
                     HStack(spacing: 12) {
-                        ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                        ForEach([
+                            ("Blanc", "#FFFFFF"),
+                            ("Noir", "#000000"),
+                            ("Gris clair", "#E5E5EA"),
+                            ("Gris foncé", "#3A3A3C")
+                        ], id: \.1) { preset in
                             Button {
-                                selectedColor = Color(hex: preset.hex)
+                                selectedTextColor = Color(hex: preset.1)
                             } label: {
                                 VStack(spacing: 4) {
                                     Circle()
-                                        .fill(Color(hex: preset.hex))
-                                        .frame(width: 44, height: 44)
+                                        .fill(Color(hex: preset.1))
+                                        .frame(width: 40, height: 40)
                                         .overlay {
-                                            if selectedColor.isSimilar(to: Color(hex: preset.hex)) {
+                                            Circle()
+                                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                            if selectedTextColor.isSimilar(to: Color(hex: preset.1)) {
                                                 Circle()
                                                     .stroke(Color.primary, lineWidth: 3)
                                             }
                                         }
                                     
-                                    Text(preset.name)
+                                    Text(preset.0)
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
@@ -426,7 +541,6 @@ struct AddVoucherView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.vertical, 8)
                 }
             }
         }
@@ -435,7 +549,64 @@ struct AddVoucherView: View {
     // MARK: - Validation
     
     private var isFormValid: Bool {
-        !storeName.isEmpty && !voucherNumber.isEmpty
+        // Vérifier que les champs essentiels sont remplis
+        guard !storeName.isEmpty && !voucherNumber.isEmpty else {
+            return false
+        }
+        
+        // 🎨 INTERDICTION : empêcher l'enregistrement si les couleurs sont trop similaires
+        guard !areColorsTooSimilar(selectedColor, selectedTextColor) else {
+            return false
+        }
+        
+        return true
+    }
+    
+    /// Vérifie si deux couleurs sont trop similaires pour une bonne lisibilité
+    private func areColorsTooSimilar(_ color1: Color, _ color2: Color) -> Bool {
+        let hex1 = color1.toHex()
+        let hex2 = color2.toHex()
+        
+        // Comparaison exacte
+        if hex1 == hex2 {
+            return true
+        }
+        
+        // Calcul de la différence de luminosité
+        let luminance1 = calculateLuminance(hex: hex1)
+        let luminance2 = calculateLuminance(hex: hex2)
+        
+        let contrastRatio = max(luminance1, luminance2) / min(luminance1, luminance2)
+        
+        // Un ratio de contraste < 3:1 est considéré comme insuffisant
+        return contrastRatio < 3.0
+    }
+    
+    /// Calcule la luminosité relative d'une couleur (formule W3C)
+    private func calculateLuminance(hex: String) -> Double {
+        let rgb = hexToRGB(hex)
+        
+        let r = rgb.r / 255.0
+        let g = rgb.g / 255.0
+        let b = rgb.b / 255.0
+        
+        let rLinear = r <= 0.03928 ? r / 12.92 : pow((r + 0.055) / 1.055, 2.4)
+        let gLinear = g <= 0.03928 ? g / 12.92 : pow((g + 0.055) / 1.055, 2.4)
+        let bLinear = b <= 0.03928 ? b / 12.92 : pow((b + 0.055) / 1.055, 2.4)
+        
+        return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear
+    }
+    
+    /// Convertit une couleur hex en RGB
+    private func hexToRGB(_ hex: String) -> (r: Double, g: Double, b: Double) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r, g, b: Double
+        r = Double((int >> 16) & 0xFF)
+        g = Double((int >> 8) & 0xFF)
+        b = Double(int & 0xFF)
+        return (r, g, b)
     }
     
     // MARK: - Actions
@@ -588,6 +759,15 @@ struct AddVoucherView: View {
             // Utiliser la couleur du bon détecté ou la couleur par défaut pour l'enseigne
             let colorHex = detectedVoucher.storeColor ?? StorePreset.getColor(for: detectedVoucher.storeName ?? "")
             
+            // Récupérer la couleur de texte apprise ou utiliser blanc par défaut
+            let textColorHex: String
+            if let storeName = detectedVoucher.storeName,
+               let learnedTextColor = StoreNameLearning.shared.getLearnedTextColor(for: storeName) {
+                textColorHex = learnedTextColor
+            } else {
+                textColorHex = "#FFFFFF"  // Blanc par défaut
+            }
+            
             let voucher = Voucher(
                 storeName: detectedVoucher.storeName ?? "Bon d'achat",
                 amount: detectedVoucher.amount,
@@ -597,7 +777,8 @@ struct AddVoucherView: View {
                 codeImageData: detectedVoucher.codeImageData,
                 expirationDate: detectedVoucher.expirationDate,
                 pdfData: selectedPDFData,
-                storeColor: colorHex
+                storeColor: colorHex,
+                textColor: textColorHex
             )
             
             modelContext.insert(voucher)
@@ -606,8 +787,9 @@ struct AddVoucherView: View {
             if let storeName = detectedVoucher.storeName {
                 StoreNameLearning.shared.learnStoreName(storeName)
                 
-                // 🎨 Apprentissage : enregistrer la préférence de couleur
+                // 🎨 Apprentissage : enregistrer les préférences de couleur
                 StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+                StoreNameLearning.shared.learnTextColor(textColorHex, for: storeName)
             }
         }
         
@@ -631,6 +813,7 @@ struct AddVoucherView: View {
         }
         
         let colorHex = selectedColor.toHex()
+        let textColorHex = selectedTextColor.toHex()
         
         let voucher = Voucher(
             storeName: storeName,
@@ -641,7 +824,8 @@ struct AddVoucherView: View {
             codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
             expirationDate: hasExpirationDate ? expirationDate : nil,
             pdfData: selectedPDFData,
-            storeColor: colorHex
+            storeColor: colorHex,
+            textColor: textColorHex
         )
         
         modelContext.insert(voucher)
@@ -653,8 +837,9 @@ struct AddVoucherView: View {
             let detectedName = analysisResult?.detectedStoreName
             StoreNameLearning.shared.learnStoreName(storeName, detectedAs: detectedName)
             
-            // 🎨 Apprentissage : enregistrer la préférence de couleur
+            // 🎨 Apprentissage : enregistrer les préférences de couleur
             StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+            StoreNameLearning.shared.learnTextColor(textColorHex, for: storeName)
             
             dismiss()
         } catch {

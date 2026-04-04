@@ -2,7 +2,10 @@
 
 ## 📚 Vue d'ensemble
 
-Le système d'apprentissage de Voucher Wallet améliore automatiquement la détection des enseignes au fil du temps. Chaque fois que vous validez un bon, l'application apprend et mémorise le nom de l'enseigne pour améliorer les futures détections.
+Le système d'apprentissage de Voucher Wallet améliore automatiquement la détection des enseignes au fil du temps. Chaque fois que vous validez un bon, l'application apprend et mémorise :
+- Le nom de l'enseigne pour améliorer les futures détections
+- La couleur de fond préférée pour chaque enseigne
+- La couleur de texte préférée pour chaque enseigne
 
 ## 🎯 Fonctionnalités principales
 
@@ -10,6 +13,8 @@ Le système d'apprentissage de Voucher Wallet améliore automatiquement la déte
 - Mémorisation des enseignes validées par l'utilisateur
 - Création d'associations entre noms détectés et noms validés
 - Compteurs d'utilisation pour chaque enseigne
+- **🎨 NOUVEAU :** Apprentissage des préférences de couleur de fond
+- **🎨 NOUVEAU :** Apprentissage des préférences de couleur de texte
 
 ### 2. **Score de confiance**
 Chaque détection d'enseigne reçoit un score de 0 à 100% basé sur :
@@ -57,6 +62,24 @@ Gestionnaire principal de l'apprentissage.
 // Enregistrer une enseigne validée
 func learnStoreName(_ storeName: String, detectedAs detectedName: String?)
 
+// 🎨 NOUVEAU : Enregistrer la couleur de fond préférée
+func learnStoreColor(_ colorHex: String, for storeName: String)
+
+// 🎨 NOUVEAU : Enregistrer la couleur de texte préférée
+func learnTextColor(_ textColorHex: String, for storeName: String)
+
+// 🎨 NOUVEAU : Récupérer la couleur de fond apprise
+func getLearnedStoreColor(for storeName: String) -> String?
+
+// 🎨 NOUVEAU : Récupérer la couleur de texte apprise
+func getLearnedTextColor(for storeName: String) -> String?
+
+// 🎨 NOUVEAU : Suggérer une couleur de texte appropriée
+func suggestTextColor(for backgroundColor: String) -> String
+
+// 🎨 NOUVEAU : Valider le contraste entre deux couleurs
+func hasGoodContrast(foreground: String, background: String) -> Bool
+
 // Récupérer les enseignes apprises
 func getLearnedStoreNames() -> [String]
 
@@ -80,6 +103,8 @@ func getMostUsedStores(limit: Int) -> [(String, Int)]
   - `learnedStoreNames` : Liste des enseignes apprises
   - `storeNameCounts` : Compteurs d'utilisation
   - `storeNameMappings` : Associations nom détecté → nom validé
+  - `learnedStoreColors` : 🎨 **NOUVEAU** - Couleurs de fond par enseigne
+  - `learnedTextColors` : 🎨 **NOUVEAU** - Couleurs de texte par enseigne
 
 ### `PDFAnalyzer` (Modifications)
 
@@ -251,6 +276,8 @@ private func importSelectedVouchers() {
 ## 📚 Ressources
 
 - `UtilitiesStoreNameLearning.swift` : Logique d'apprentissage
+- `UtilitiesStoreNameLearning+TextColor.swift` : 🎨 **NOUVEAU** - Extension pour les couleurs de texte
 - `UtilitiesPDFAnalyzer.swift` : Détection avec scoring
 - `ViewsPDFImportHandler.swift` : Intégration UI
 - `ViewsLearningStatsView.swift` : Vue des statistiques
+- `TEXT-COLOR-FEATURE.md` : 🎨 **NOUVEAU** - Documentation de la fonctionnalité couleur de texte

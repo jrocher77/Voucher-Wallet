@@ -14,20 +14,23 @@ struct AddExpenseView: View {
     
     let voucher: Voucher
     var existingExpense: Expense? // Pour l'édition - pas @State !
+    var onVoucherDeleted: (() -> Void)? // Callback pour informer la vue parente
     
     @State private var amount: String
     @State private var note: String
     @State private var date: Date
     @State private var showingError = false
     @State private var errorMessage = ""
+    @State private var showingDeleteVoucherAlert = false
     
     private var isEditing: Bool {
         existingExpense != nil
     }
     
-    init(voucher: Voucher, expense: Expense? = nil) {
+    init(voucher: Voucher, expense: Expense? = nil, onVoucherDeleted: (() -> Void)? = nil) {
         self.voucher = voucher
         self.existingExpense = expense
+        self.onVoucherDeleted = onVoucherDeleted
         
         // Debug
         if let expense = expense {
@@ -145,6 +148,16 @@ struct AddExpenseView: View {
             } message: {
                 Text(errorMessage)
             }
+            .alert("Solde épuisé", isPresented: $showingDeleteVoucherAlert) {
+                Button("Annuler", role: .cancel) {
+                    dismiss()
+                }
+                Button("Supprimer le bon", role: .destructive) {
+                    deleteVoucher()
+                }
+            } message: {
+                Text("Le solde de ce bon est maintenant à 0 €. Voulez-vous supprimer le bon ?")
+            }
         }
     }
     
@@ -198,7 +211,14 @@ struct AddExpenseView: View {
         do {
             try modelContext.save()
             print("💾 Dépense sauvegardée avec succès")
-            dismiss()
+            
+            // Vérifier si le solde est maintenant à 0
+            if voucher.remainingBalance == 0 {
+                print("⚠️ Le solde du bon est maintenant à 0")
+                showingDeleteVoucherAlert = true
+            } else {
+                dismiss()
+            }
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
@@ -216,6 +236,23 @@ struct AddExpenseView: View {
         } catch {
             errorMessage = "Erreur lors de la suppression : \(error.localizedDescription)"
             showingError = true
+        }
+    }
+    
+    private func deleteVoucher() {
+        // Marquer que le bon va être supprimé AVANT de le supprimer
+        onVoucherDeleted?()
+        
+        modelContext.delete(voucher)
+        
+        do {
+            try modelContext.save()
+            print("🗑️ Bon supprimé avec succès")
+            dismiss()
+        } catch {
+            errorMessage = "Erreur lors de la suppression du bon : \(error.localizedDescription)"
+            showingError = true
+            print("❌ Erreur de suppression du bon: \(error)")
         }
     }
 }

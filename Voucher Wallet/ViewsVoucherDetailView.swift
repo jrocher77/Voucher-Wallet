@@ -20,6 +20,7 @@ struct VoucherDetailView: View {
     @State private var showingShareSheet = false
     @State private var showingEditView = false
     @State private var expenseToPresent: ExpensePresentation?
+    @State private var isVoucherDeleted = false
     
     enum ExpensePresentation: Identifiable {
         case new
@@ -41,6 +42,18 @@ struct VoucherDetailView: View {
     }
     
     var body: some View {
+        if isVoucherDeleted {
+            // Vue vide pendant la fermeture
+            Color.clear
+                .onAppear {
+                    dismiss()
+                }
+        } else {
+            contentView
+        }
+    }
+    
+    private var contentView: some View {
         ScrollView {
             VStack(spacing: 24) {
                 // Carte miniature en haut
@@ -147,9 +160,13 @@ struct VoucherDetailView: View {
         .sheet(item: $expenseToPresent) { presentation in
             switch presentation {
             case .new:
-                AddExpenseView(voucher: voucher)
+                AddExpenseView(voucher: voucher, onVoucherDeleted: {
+                    isVoucherDeleted = true
+                })
             case .edit(let expense):
-                AddExpenseView(voucher: voucher, expense: expense)
+                AddExpenseView(voucher: voucher, expense: expense, onVoucherDeleted: {
+                    isVoucherDeleted = true
+                })
             }
         }
     }

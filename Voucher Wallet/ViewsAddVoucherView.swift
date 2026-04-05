@@ -24,8 +24,7 @@ struct AddVoucherView: View {
     @State private var selectedPDFData: Data?
     @State private var showingError = false
     @State private var errorMessage = ""
-    @State private var showingDuplicateAlert = false
-    @State private var duplicateVoucherNumbers: [String] = []
+    @State private var duplicateVoucherIds: Set<UUID> = [] // IDs des bons déjà présents
     
     // Pour la gestion multi-bons
     @State private var detectedVouchers: [PDFAnalyzer.DetectedVoucher] = []
@@ -129,15 +128,6 @@ struct AddVoucherView: View {
             } message: {
                 Text(errorMessage)
             }
-            .alert("Bon(s) déjà importé(s)", isPresented: $showingDuplicateAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                if duplicateVoucherNumbers.count == 1 {
-                    Text("Le bon avec le numéro \(duplicateVoucherNumbers[0]) existe déjà dans votre wallet.")
-                } else {
-                    Text("Les bons suivants existent déjà dans votre wallet :\n\n\(duplicateVoucherNumbers.joined(separator: "\n"))")
-                }
-            }
         }
     }
     
@@ -219,34 +209,64 @@ struct AddVoucherView: View {
     
     private var multipleVouchersSection: some View {
         Section {
+            // Afficher un message si des doublons sont détectés
+            if !duplicateVoucherIds.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(.orange)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(duplicateVoucherIds.count) bon(s) déjà présent(s)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("Ces bons ne peuvent pas être importés à nouveau")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            
             // Bouton tout sélectionner
             HStack {
                 Button {
-                    if selectedVoucherIds.count == detectedVouchers.count {
+                    let nonDuplicateIds = Set(detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.map { $0.id })
+                    
+                    if selectedVoucherIds.count == nonDuplicateIds.count {
                         selectedVoucherIds.removeAll()
                     } else {
-                        selectedVoucherIds = Set(detectedVouchers.map { $0.id })
+                        selectedVoucherIds = nonDuplicateIds
                     }
                 } label: {
                     HStack {
-                        Image(systemName: selectedVoucherIds.count == detectedVouchers.count ? "checkmark.square.fill" : "square")
-                        Text(selectedVoucherIds.count == detectedVouchers.count ? "Tout désélectionner" : "Tout sélectionner")
+                        let nonDuplicateCount = detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count
+                        let allNonDuplicatesSelected = selectedVoucherIds.count == nonDuplicateCount
+                        
+                        Image(systemName: allNonDuplicatesSelected ? "checkmark.square.fill" : "square")
+                        Text(allNonDuplicatesSelected ? "Tout désélectionner" : "Tout sélectionner")
                     }
                 }
                 .buttonStyle(.plain)
                 
                 Spacer()
                 
-                Text("\(selectedVoucherIds.count)/\(detectedVouchers.count)")
+                Text("\(selectedVoucherIds.count)/\(detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
             }
             
             // Liste des bons
             ForEach(detectedVouchers) { voucher in
+                let isDuplicate = duplicateVoucherIds.contains(voucher.id)
+                
                 VoucherSelectionRowCompact(
                     voucher: voucher,
                     isSelected: selectedVoucherIds.contains(voucher.id),
+                    isDuplicate: isDuplicate,
                     onTap: {
                         toggleSelection(voucher.id)
                     },
@@ -655,10 +675,33 @@ struct AddVoucherView: View {
     }
     
     private func toggleSelection(_ id: UUID) {
+        // Ne pas permettre la sélection des doublons
+        if duplicateVoucherIds.contains(id) {
+            return
+        }
+        
         if selectedVoucherIds.contains(id) {
             selectedVoucherIds.remove(id)
         } else {
             selectedVoucherIds.insert(id)
+        }
+    }
+    
+    /// Identifie les bons qui sont déjà présents dans le wallet
+    private func identifyDuplicates() {
+        var duplicateIds: Set<UUID> = []
+        
+        for voucher in detectedVouchers {
+            if isVoucherNumberDuplicate(voucher.voucherNumber) {
+                duplicateIds.insert(voucher.id)
+            }
+        }
+        
+        duplicateVoucherIds = duplicateIds
+        
+        // Afficher un message informatif si des doublons sont détectés
+        if !duplicateIds.isEmpty {
+            print("⚠️ \(duplicateIds.count) bon(s) déjà présent(s) dans le wallet")
         }
     }
     
@@ -705,8 +748,17 @@ struct AddVoucherView: View {
                 if result.detectedVouchers.count > 1 {
                     print("🎉 \(result.detectedVouchers.count) bons détectés")
                     detectedVouchers = result.detectedVouchers
-                    // Sélectionner tous par défaut
-                    selectedVoucherIds = Set(detectedVouchers.map { $0.id })
+                    
+                    // Identifier les doublons
+                    identifyDuplicates()
+                    
+                    // Sélectionner tous les bons NON dupliqués par défaut
+                    selectedVoucherIds = Set(
+                        detectedVouchers
+                            .filter { !duplicateVoucherIds.contains($0.id) }
+                            .map { $0.id }
+                    )
+                    
                     return
                 }
                 
@@ -790,26 +842,12 @@ struct AddVoucherView: View {
     private func importSelectedVouchers() {
         let vouchersToImport = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
         
-        // 🚫 Filtrer les doublons
-        var duplicates: [String] = []
+        // ⚠️ Normalement, tous les doublons sont déjà filtrés, mais vérification supplémentaire
         var validVouchers: [PDFAnalyzer.DetectedVoucher] = []
         
         for voucher in vouchersToImport {
-            if isVoucherNumberDuplicate(voucher.voucherNumber) {
-                duplicates.append(voucher.voucherNumber)
-            } else {
+            if !isVoucherNumberDuplicate(voucher.voucherNumber) {
                 validVouchers.append(voucher)
-            }
-        }
-        
-        // Afficher une alerte si des doublons sont détectés
-        if !duplicates.isEmpty {
-            duplicateVoucherNumbers = duplicates
-            showingDuplicateAlert = true
-            
-            // Si tous les bons sont des doublons, on s'arrête là
-            if validVouchers.isEmpty {
-                return
             }
         }
         
@@ -855,14 +893,7 @@ struct AddVoucherView: View {
         do {
             try modelContext.save()
             print("✅ \(validVouchers.count) bon(s) importé(s) avec succès")
-            if !duplicates.isEmpty {
-                print("⚠️ \(duplicates.count) doublon(s) ignoré(s)")
-            }
-            
-            // Fermer seulement si au moins un bon a été importé
-            if !validVouchers.isEmpty {
-                dismiss()
-            }
+            dismiss()
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
@@ -872,8 +903,8 @@ struct AddVoucherView: View {
     private func saveVoucher() {
         // 🚫 Vérifier si le bon existe déjà
         if isVoucherNumberDuplicate(voucherNumber) {
-            duplicateVoucherNumbers = [voucherNumber]
-            showingDuplicateAlert = true
+            errorMessage = "Le bon avec le numéro \(voucherNumber) existe déjà dans votre wallet."
+            showingError = true
             return
         }
         
@@ -962,6 +993,7 @@ struct AddVoucherView: View {
 struct VoucherSelectionRowCompact: View {
     let voucher: PDFAnalyzer.DetectedVoucher
     let isSelected: Bool
+    let isDuplicate: Bool
     let onTap: () -> Void
     let onEdit: () -> Void
     
@@ -969,11 +1001,12 @@ struct VoucherSelectionRowCompact: View {
         HStack(spacing: 12) {
             // Checkbox
             Button(action: onTap) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                Image(systemName: isDuplicate ? "xmark.circle.fill" : (isSelected ? "checkmark.circle.fill" : "circle"))
                     .font(.title3)
-                    .foregroundStyle(isSelected ? .blue : .gray)
+                    .foregroundColor(isDuplicate ? .red : (isSelected ? .blue : .gray))
             }
             .buttonStyle(.plain)
+            .disabled(isDuplicate)
             
             // Info du bon (cliquable pour éditer)
             Button(action: onEdit) {
@@ -983,9 +1016,24 @@ struct VoucherSelectionRowCompact: View {
                             Text(voucher.storeName ?? "Bon d'achat")
                                 .font(.body)
                                 .fontWeight(.medium)
+                                .foregroundColor(isDuplicate ? .secondary : .primary)
                             
-                            // Badge de confiance
-                            if voucher.storeNameConfidence > 0 {
+                            // Badge "Déjà importé"
+                            if isDuplicate {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .font(.system(size: 10))
+                                    Text("Déjà importé")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.red.opacity(0.15))
+                                .foregroundColor(.red)
+                                .clipShape(Capsule())
+                            }
+                            // Badge de confiance (seulement si non-dupliqué)
+                            else if voucher.storeNameConfidence > 0 {
                                 confidenceBadge(for: voucher.storeNameConfidence)
                             }
                         }
@@ -995,18 +1043,20 @@ struct VoucherSelectionRowCompact: View {
                         if let amount = voucher.amount {
                             Text(amount, format: .currency(code: "EUR"))
                                 .font(.subheadline)
-                                .foregroundStyle(.blue)
+                                .foregroundColor(isDuplicate ? .secondary : .blue)
                         }
                         
-                        Image(systemName: "pencil.circle")
-                            .font(.body)
-                            .foregroundStyle(.blue)
+                        if !isDuplicate {
+                            Image(systemName: "pencil.circle")
+                                .font(.body)
+                                .foregroundColor(.blue)
+                        }
                     }
                     
                     HStack(spacing: 8) {
                         Label("Page \(voucher.pageNumber)", systemImage: "doc.text")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                         
                         if voucher.codeType == .qrCode {
                             Image(systemName: "qrcode")
@@ -1016,16 +1066,18 @@ struct VoucherSelectionRowCompact: View {
                                 .font(.caption)
                         }
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                     
                     Text(voucher.voucherNumber)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
             }
             .buttonStyle(.plain)
+            .disabled(isDuplicate)
         }
+        .opacity(isDuplicate ? 0.6 : 1.0)
     }
     
     /// Badge de confiance pour la détection de l'enseigne
@@ -1043,7 +1095,7 @@ struct VoucherSelectionRowCompact: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(color.opacity(0.15))
-        .foregroundStyle(color)
+        .foregroundColor(color)
         .clipShape(Capsule())
     }
     

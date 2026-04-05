@@ -20,8 +20,7 @@ struct MultiVoucherSelectionView: View {
     
     @State private var selectedVouchers: Set<UUID> = []
     @State private var selectAll = true
-    @State private var showingDuplicateAlert = false
-    @State private var duplicateVoucherNumbers: [String] = []
+    @State private var duplicateVoucherIds: Set<UUID> = [] // IDs des bons déjà présents
     
     var body: some View {
         NavigationStack {
@@ -35,7 +34,8 @@ struct MultiVoucherSelectionView: View {
                         ForEach(detectedVouchers) { voucher in
                             VoucherSelectionRow(
                                 voucher: voucher,
-                                isSelected: selectedVouchers.contains(voucher.id)
+                                isSelected: selectedVouchers.contains(voucher.id),
+                                isDuplicate: duplicateVoucherIds.contains(voucher.id)
                             ) {
                                 toggleSelection(voucher.id)
                             }
@@ -61,17 +61,15 @@ struct MultiVoucherSelectionView: View {
                 }
             }
             .onAppear {
-                // Sélectionner tous par défaut
-                selectedVouchers = Set(detectedVouchers.map { $0.id })
-            }
-            .alert("Bon(s) déjà importé(s)", isPresented: $showingDuplicateAlert) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                if duplicateVoucherNumbers.count == 1 {
-                    Text("Le bon avec le numéro \(duplicateVoucherNumbers[0]) existe déjà dans votre wallet.")
-                } else {
-                    Text("Les bons suivants existent déjà dans votre wallet :\n\n\(duplicateVoucherNumbers.joined(separator: "\n"))")
-                }
+                // Identifier les doublons
+                identifyDuplicates()
+                
+                // Sélectionner tous les bons non-dupliqués par défaut
+                selectedVouchers = Set(
+                    detectedVouchers
+                        .filter { !duplicateVoucherIds.contains($0.id) }
+                        .map { $0.id }
+                )
             }
         }
     }
@@ -81,23 +79,50 @@ struct MultiVoucherSelectionView: View {
             HStack {
                 Image(systemName: "checkmark.circle.badge.questionmark.fill")
                     .font(.system(size: 50))
-                    .foregroundStyle(.blue)
+                    .foregroundColor(.blue)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(detectedVouchers.count) bon(s) détecté(s)")
                         .font(.headline)
                     Text("Sélectionnez ceux à importer")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(.secondary)
                 }
                 
                 Spacer()
             }
             
+            // Afficher un message si des doublons sont détectés
+            if !duplicateVoucherIds.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundColor(.orange)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(duplicateVoucherIds.count) bon(s) déjà présent(s)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("Ces bons ne peuvent pas être importés à nouveau")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(12)
+                .background(Color.orange.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            
             // Bouton tout sélectionner/désélectionner
             Button {
                 if selectAll {
-                    selectedVouchers = Set(detectedVouchers.map { $0.id })
+                    // Sélectionner tous les bons NON dupliqués
+                    selectedVouchers = Set(
+                        detectedVouchers
+                            .filter { !duplicateVoucherIds.contains($0.id) }
+                            .map { $0.id }
+                    )
                 } else {
                     selectedVouchers.removeAll()
                 }
@@ -119,10 +144,33 @@ struct MultiVoucherSelectionView: View {
     }
     
     private func toggleSelection(_ id: UUID) {
+        // Ne pas permettre la sélection des doublons
+        if duplicateVoucherIds.contains(id) {
+            return
+        }
+        
         if selectedVouchers.contains(id) {
             selectedVouchers.remove(id)
         } else {
             selectedVouchers.insert(id)
+        }
+    }
+    
+    /// Identifie les bons qui sont déjà présents dans le wallet
+    private func identifyDuplicates() {
+        var duplicateIds: Set<UUID> = []
+        
+        for voucher in detectedVouchers {
+            if isVoucherNumberDuplicate(voucher.voucherNumber) {
+                duplicateIds.insert(voucher.id)
+            }
+        }
+        
+        duplicateVoucherIds = duplicateIds
+        
+        // Afficher un message informatif si des doublons sont détectés
+        if !duplicateIds.isEmpty {
+            print("⚠️ \(duplicateIds.count) bon(s) déjà présent(s) dans le wallet")
         }
     }
     
@@ -134,30 +182,16 @@ struct MultiVoucherSelectionView: View {
     private func importSelectedVouchers() {
         let vouchersToImport = detectedVouchers.filter { selectedVouchers.contains($0.id) }
         
-        // 🚫 Filtrer les doublons
-        var duplicates: [String] = []
+        // ⚠️ Normalement, tous les doublons sont déjà filtrés, mais vérification supplémentaire
         var validVouchers: [PDFAnalyzer.DetectedVoucher] = []
         
         for voucher in vouchersToImport {
-            if isVoucherNumberDuplicate(voucher.voucherNumber) {
-                duplicates.append(voucher.voucherNumber)
-            } else {
+            if !isVoucherNumberDuplicate(voucher.voucherNumber) {
                 validVouchers.append(voucher)
             }
         }
         
-        // Afficher une alerte si des doublons sont détectés
-        if !duplicates.isEmpty {
-            duplicateVoucherNumbers = duplicates
-            showingDuplicateAlert = true
-            
-            // Si tous les bons sont des doublons, on s'arrête là
-            if validVouchers.isEmpty {
-                return
-            }
-        }
-        
-        // Importer seulement les bons valides
+        // Importer les bons valides
         for detectedVoucher in validVouchers {
             let voucher = Voucher(
                 storeName: detectedVoucher.storeName ?? "Bon d'achat",
@@ -182,14 +216,7 @@ struct MultiVoucherSelectionView: View {
         do {
             try modelContext.save()
             print("✅ \(validVouchers.count) bon(s) importé(s) avec succès")
-            if !duplicates.isEmpty {
-                print("⚠️ \(duplicates.count) doublon(s) ignoré(s)")
-            }
-            
-            // Fermer seulement si au moins un bon a été importé
-            if !validVouchers.isEmpty {
-                dismiss()
-            }
+            dismiss()
         } catch {
             print("❌ Erreur lors de l'enregistrement: \(error)")
         }
@@ -199,77 +226,143 @@ struct MultiVoucherSelectionView: View {
 struct VoucherSelectionRow: View {
     let voucher: PDFAnalyzer.DetectedVoucher
     let isSelected: Bool
+    let isDuplicate: Bool
     let onTap: () -> Void
+    
+    // Computed properties pour simplifier le type-checking
+    private var checkboxIcon: String {
+        isDuplicate ? "xmark.circle.fill" : (isSelected ? "checkmark.circle.fill" : "circle")
+    }
+    
+    private var checkboxColor: Color {
+        isDuplicate ? .red : (isSelected ? .blue : .gray)
+    }
+    
+    private var backgroundColor: Color {
+        isDuplicate ? Color(.systemGray5) : (isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
+    }
+    
+    private var borderColor: Color {
+        isDuplicate ? Color.red.opacity(0.3) : (isSelected ? Color.blue : Color.clear)
+    }
     
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Checkbox
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundStyle(isSelected ? .blue : .gray)
-                
-                // Info du bon
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        HStack(spacing: 6) {
-                            Text(voucher.storeName ?? "Bon d'achat")
-                                .font(.headline)
-                            
-                            // Badge de confiance
-                            if voucher.storeNameConfidence > 0 {
-                                confidenceBadge(for: voucher.storeNameConfidence)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        if let amount = voucher.amount {
-                            Text(amount.formattedEuro)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.blue)
-                        }
-                    }
-                    
-                    Text("Numéro: \(voucher.voucherNumber)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    
-                    HStack {
-                        Label("Page \(voucher.pageNumber)", systemImage: "doc.text")
-                            .font(.caption2)
-                        
-                        if voucher.codeType == .qrCode {
-                            Label("QR", systemImage: "qrcode")
-                                .font(.caption2)
-                        } else {
-                            Label("Code-barres", systemImage: "barcode")
-                                .font(.caption2)
-                        }
-                        
-                        if let expiration = voucher.expirationDate {
-                            Label(expiration.frenchAbbreviatedFormat, 
-                                  systemImage: "calendar")
-                                .font(.caption2)
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
-            )
+            rowContent
         }
         .buttonStyle(.plain)
+        .disabled(isDuplicate)
+    }
+    
+    private var rowContent: some View {
+        HStack(spacing: 16) {
+            checkboxView
+            voucherInfoView
+            Spacer()
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(backgroundColor)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(borderColor, lineWidth: 2)
+        )
+        .opacity(isDuplicate ? 0.6 : 1.0)
+    }
+    
+    private var checkboxView: some View {
+        Image(systemName: checkboxIcon)
+            .font(.title2)
+            .foregroundColor(checkboxColor)
+    }
+    
+    private var voucherInfoView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            topRow
+            voucherNumberView
+            metadataRow
+        }
+    }
+    
+    private var topRow: some View {
+        HStack {
+            badgesRow
+            Spacer()
+            amountView
+        }
+    }
+    
+    private var badgesRow: some View {
+        HStack(spacing: 6) {
+            Text(voucher.storeName ?? "Bon d'achat")
+                .font(.headline)
+                .foregroundColor(isDuplicate ? .secondary : .primary)
+            
+            if isDuplicate {
+                duplicateBadge
+            } else if voucher.storeNameConfidence > 0 {
+                confidenceBadge(for: voucher.storeNameConfidence)
+            }
+        }
+    }
+    
+    private var duplicateBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 10))
+            Text("Déjà importé")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color.red.opacity(0.15))
+        .foregroundColor(.red)
+        .clipShape(Capsule())
+    }
+    
+    @ViewBuilder
+    private var amountView: some View {
+        if let amount = voucher.amount {
+            Text(amount.formattedEuro)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(isDuplicate ? .secondary : .blue)
+        }
+    }
+    
+    private var voucherNumberView: some View {
+        Text("Numéro: \(voucher.voucherNumber)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+    }
+    
+    private var metadataRow: some View {
+        HStack {
+            Label("Page \(voucher.pageNumber)", systemImage: "doc.text")
+                .font(.caption2)
+            
+            codeTypeLabel
+            
+            if let expiration = voucher.expirationDate {
+                Label(expiration.frenchAbbreviatedFormat, systemImage: "calendar")
+                    .font(.caption2)
+            }
+        }
+        .foregroundColor(.secondary)
+    }
+    
+    private var codeTypeLabel: some View {
+        Group {
+            if voucher.codeType == .qrCode {
+                Label("QR", systemImage: "qrcode")
+                    .font(.caption2)
+            } else {
+                Label("Code-barres", systemImage: "barcode")
+                    .font(.caption2)
+            }
+        }
     }
     
     /// Badge de confiance pour la détection de l'enseigne
@@ -287,7 +380,7 @@ struct VoucherSelectionRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(color.opacity(0.15))
-        .foregroundStyle(color)
+        .foregroundColor(color)
         .clipShape(Capsule())
     }
     

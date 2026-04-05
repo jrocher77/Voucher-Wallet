@@ -106,4 +106,10 @@ Voucher Wallet/
 - Ne pas descendre la cible iOS sous 17.0 (SwiftData requis)
 - Ne pas contourner la validation de contraste WCAG pour les couleurs
 - Ne pas accéder aux fichiers PDF sans `startAccessingSecurityScopedResource()` / `stopAccessingSecurityScopedResource()`
-- Ne pas générer de fichiers .MD à chaque ajout de fonctionnalité ou chaque modification du code.
+- Ne pas générer de fichiers .md pour documenter chaque ajout de fonctionnalité ou chaque modification du code.
+
+---
+
+## À faire
+
+- Met à jours le fichier README.md si nécéssaire lors de la modification du code ou de l'ajout d'une fonctionnalité.

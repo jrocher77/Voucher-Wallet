@@ -3,87 +3,69 @@
 <plist version="1.0">
 <dict>
     <key>StringsTable</key>
-    <string>Statistics</string>
-    <key>Title</key>
-    <string>Statistiques</string>
+    <string>Root</string>
     <key>PreferenceSpecifiers</key>
     <array>
-        <!-- Section : Statistiques d'apprentissage -->
+        <!-- En-tête : À propos de l'apprentissage -->
         <dict>
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>Statistiques d'apprentissage</string>
-        </dict>
-        
-        <!-- Nombre d'enseignes mémorisées -->
-        <dict>
-            <key>Type</key>
-            <string>PSTitleValueSpecifier</string>
-            <key>Title</key>
-            <string>Enseignes mémorisées</string>
-            <key>Key</key>
-            <string>learned_stores_count</string>
-            <key>DefaultValue</key>
-            <string>0</string>
-        </dict>
-        
-        <!-- Nombre de préférences de couleurs -->
-        <dict>
-            <key>Type</key>
-            <string>PSTitleValueSpecifier</string>
-            <key>Title</key>
-            <string>Préférences de couleurs</string>
-            <key>Key</key>
-            <string>color_preferences_count</string>
-            <key>DefaultValue</key>
-            <string>0</string>
-        </dict>
-        
-        <!-- Section : Enseignes favorites -->
-        <dict>
-            <key>Type</key>
-            <string>PSGroupSpecifier</string>
-            <key>Title</key>
-            <string>Enseignes favorites</string>
+            <string>Apprentissage automatique</string>
             <key>FooterText</key>
-            <string>Les 3 enseignes les plus utilisées</string>
+            <string>L'application apprend automatiquement vos préférences pour améliorer la détection des enseignes et des couleurs associées.</string>
         </dict>
         
-        <!-- 1ère enseigne favorite -->
+        <!-- Lien vers la page Statistiques -->
+        <dict>
+            <key>Type</key>
+            <string>PSChildPaneSpecifier</string>
+            <key>Title</key>
+            <string>Statistiques</string>
+            <key>File</key>
+            <string>Statistics</string>
+        </dict>
+        
+        <!-- Section : Gestion des données -->
+        <dict>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>Gestion des données</string>
+            <key>FooterText</key>
+            <string>Activez cette option pour réinitialiser toutes les données d'apprentissage. Une confirmation vous sera demandée lors de la prochaine ouverture de l'app. Vos bons ne seront pas affectés.</string>
+        </dict>
+        
+        <!-- Toggle pour demander la réinitialisation -->
+        <dict>
+            <key>Type</key>
+            <string>PSToggleSwitchSpecifier</string>
+            <key>Title</key>
+            <string>Demande de réinitialisation</string>
+            <key>Key</key>
+            <string>reset_learning_requested</string>
+            <key>DefaultValue</key>
+            <false/>
+        </dict>
+        
+        <!-- Section : À propos -->
+        <dict>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>À propos</string>
+        </dict>
+        
+        <!-- Version de l'app -->
         <dict>
             <key>Type</key>
             <string>PSTitleValueSpecifier</string>
             <key>Title</key>
-            <string>🥇 Première</string>
+            <string>Version</string>
             <key>Key</key>
-            <string>top_store_1</string>
+            <string>version_preference</string>
             <key>DefaultValue</key>
-            <string>-</string>
-        </dict>
-        
-        <!-- 2ème enseigne favorite -->
-        <dict>
-            <key>Type</key>
-            <string>PSTitleValueSpecifier</string>
-            <key>Title</key>
-            <string>🥈 Deuxième</string>
-            <key>Key</key>
-            <string>top_store_2</string>
-            <key>DefaultValue</key>
-            <string>-</string>
-        </dict>
-        
-        <!-- 3ème enseigne favorite -->
-        <dict>
-            <key>Type</key>
-            <string>PSTitleValueSpecifier</string>
-            <key>Title</key>
-            <string>🥉 Troisième</string>
-            <key>Key</key>
-            <string>top_store_3</string>
-            <key>DefaultValue</key>
-            <string>-</string>
+            <string>1.0</string>
         </dict>
     </array>
 </dict>

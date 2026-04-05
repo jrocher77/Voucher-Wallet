@@ -13,7 +13,8 @@ struct VoucherDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @State private var brightness: Double = UIScreen.main.brightness
+    @State private var initialBrightness: Double = UIScreen.main.brightness
+    @State private var isBrightnessMaximized = false
     @State private var showingDeleteAlert = false
     @State private var showingPDFViewer = false
     @State private var showingShareSheet = false
@@ -119,9 +120,8 @@ struct VoucherDetailView: View {
             Text("Cette action est irréversible.")
         }
         .onAppear {
-            // Augmenter la luminosité pour faciliter le scan
-            brightness = UIScreen.main.brightness
-            UIScreen.main.brightness = 1.0
+            // Enregistrer la luminosité initiale
+            initialBrightness = UIScreen.main.brightness
         }
         .onDisappear {
             // Restaurer la luminosité d'origine
@@ -215,6 +215,9 @@ struct VoucherDetailView: View {
             .frame(maxWidth: .infinity)
             .frame(height: voucher.codeType == .qrCode ? 350 : 220)
             .padding(.horizontal)
+            .onTapGesture {
+                toggleBrightness()
+            }
             
             // Numéro du bon en texte
             VStack(spacing: 8) {
@@ -411,7 +414,20 @@ struct VoucherDetailView: View {
     }
     
     private func restoreBrightness() {
-        UIScreen.main.brightness = brightness
+        UIScreen.main.brightness = initialBrightness
+        isBrightnessMaximized = false
+    }
+    
+    private func toggleBrightness() {
+        if isBrightnessMaximized {
+            // Restaurer la luminosité initiale
+            UIScreen.main.brightness = initialBrightness
+            isBrightnessMaximized = false
+        } else {
+            // Passer au maximum
+            UIScreen.main.brightness = 1.0
+            isBrightnessMaximized = true
+        }
     }
 }
 

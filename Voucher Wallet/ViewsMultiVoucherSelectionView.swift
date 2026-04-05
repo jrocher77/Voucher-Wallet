@@ -22,27 +22,21 @@ struct MultiVoucherSelectionView: View {
     @State private var selectAll = true
     @State private var duplicateVoucherIds: Set<UUID> = [] // IDs des bons déjà présents
     
+    // Couleurs globales pour l'import multi-bons
+    @State private var globalCardColor = Color(hex: "#007AFF")
+    @State private var globalTextColor = Color(hex: "#FFFFFF")
+    
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            Form {
                 // En-tête
-                headerView
+                headerSection
                 
                 // Liste des bons
-                ScrollView {
-                    LazyVStack(spacing: 16) {
-                        ForEach(detectedVouchers) { voucher in
-                            VoucherSelectionRow(
-                                voucher: voucher,
-                                isSelected: selectedVouchers.contains(voucher.id),
-                                isDuplicate: duplicateVoucherIds.contains(voucher.id)
-                            ) {
-                                toggleSelection(voucher.id)
-                            }
-                        }
-                    }
-                    .padding()
-                }
+                vouchersListSection
+                
+                // Section de personnalisation globale des couleurs (EN BAS)
+                globalColorCustomizationSection
             }
             .navigationTitle("Bons détectés")
             .navigationBarTitleDisplayMode(.inline)
@@ -70,77 +64,214 @@ struct MultiVoucherSelectionView: View {
                         .filter { !duplicateVoucherIds.contains($0.id) }
                         .map { $0.id }
                 )
+                
+                // 🎨 Initialiser les couleurs globales avec la couleur de la première enseigne détectée
+                if let firstVoucher = detectedVouchers.first {
+                    if let hexColor = firstVoucher.storeColor {
+                        globalCardColor = Color(hex: hexColor)
+                    } else if let storeName = firstVoucher.storeName {
+                        globalCardColor = Color(hex: StorePreset.getColor(for: storeName))
+                    }
+                    
+                    // Suggérer automatiquement la couleur de texte
+                    let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: globalCardColor.toHex())
+                    globalTextColor = Color(hex: suggestedTextColor)
+                    
+                    print("🎨 Couleurs globales initialisées : fond=\(globalCardColor.toHex()), texte=\(globalTextColor.toHex())")
+                }
             }
         }
     }
     
-    private var headerView: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Image(systemName: "checkmark.circle.badge.questionmark.fill")
-                    .font(.system(size: 50))
-                    .foregroundColor(.blue)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(detectedVouchers.count) bon(s) détecté(s)")
-                        .font(.headline)
-                    Text("Sélectionnez ceux à importer")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+    // MARK: - Sections
+    
+    private var globalColorCustomizationSection: some View {
+        Section {
+            ColorPicker("Couleur de fond", selection: $globalCardColor, supportsOpacity: false)
+                .onChange(of: globalCardColor) { oldValue, newValue in
+                    if areColorsTooSimilar(newValue, globalTextColor) {
+                        let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: newValue.toHex())
+                        globalTextColor = Color(hex: suggestedTextColor)
+                    }
                 }
-                
-                Spacer()
+            
+            ColorPicker("Couleur du texte", selection: $globalTextColor, supportsOpacity: false)
+            
+            if areColorsTooSimilar(globalCardColor, globalTextColor) {
+                Label {
+                    Text("⚠️ Les couleurs sont identiques ou trop similaires.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.red)
             }
             
-            // Afficher un message si des doublons sont détectés
-            if !duplicateVoucherIds.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.orange)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(duplicateVoucherIds.count) bon(s) déjà présent(s)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Ces bons ne peuvent pas être importés à nouveau")
+            if !areColorsTooSimilar(globalCardColor, globalTextColor) {
+                Label {
+                    Text("Bon contraste pour la lisibilité")
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.green)
+            }
+            
+            // Prévisualisation
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Aperçu")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Enseigne exemple")
+                            .font(.headline)
+                            .foregroundStyle(globalTextColor)
+                        
+                        Text("1234567890")
                             .font(.caption)
+                            .foregroundStyle(globalTextColor.opacity(0.8))
+                    }
+                    Spacer()
+                    Text("50,00 €")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(globalTextColor)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(globalCardColor)
+                )
+            }
+            
+            // Préréglages
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Couleurs populaires")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                            Button {
+                                globalCardColor = Color(hex: preset.hex)
+                                let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: preset.hex)
+                                globalTextColor = Color(hex: suggestedTextColor)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color(hex: preset.hex))
+                                        .frame(width: 44, height: 44)
+                                        .overlay {
+                                            if globalCardColor.isSimilar(to: Color(hex: preset.hex)) {
+                                                Circle()
+                                                    .stroke(Color.primary, lineWidth: 3)
+                                            }
+                                        }
+                                    
+                                    Text(preset.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        } header: {
+            Text("Personnalisation des couleurs (tous les bons)")
+        } footer: {
+            Text("Ces couleurs seront appliquées à tous les bons sélectionnés.")
+        }
+    }
+    
+    private var headerSection: some View {
+        Section {
+            VStack(spacing: 12) {
+                HStack {
+                    Image(systemName: "checkmark.circle.badge.questionmark.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.blue)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(detectedVouchers.count) bon(s) détecté(s)")
+                            .font(.headline)
+                        Text("Sélectionnez ceux à importer")
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     
                     Spacer()
                 }
-                .padding(12)
-                .background(Color.orange.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            
-            // Bouton tout sélectionner/désélectionner
-            Button {
-                if selectAll {
-                    // Sélectionner tous les bons NON dupliqués
-                    selectedVouchers = Set(
-                        detectedVouchers
-                            .filter { !duplicateVoucherIds.contains($0.id) }
-                            .map { $0.id }
-                    )
-                } else {
-                    selectedVouchers.removeAll()
-                }
-                selectAll.toggle()
-            } label: {
-                Label(selectAll ? "Tout sélectionner" : "Tout désélectionner", 
-                      systemImage: selectAll ? "checkmark.square" : "square")
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
+                
+                // Afficher un message si des doublons sont détectés
+                if !duplicateVoucherIds.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.orange)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(duplicateVoucherIds.count) bon(s) déjà présent(s)")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Ces bons ne peuvent pas être importés à nouveau")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                
+                // Bouton tout sélectionner/désélectionner
+                Button {
+                    if selectAll {
+                        // Sélectionner tous les bons NON dupliqués
+                        selectedVouchers = Set(
+                            detectedVouchers
+                                .filter { !duplicateVoucherIds.contains($0.id) }
+                                .map { $0.id }
+                        )
+                    } else {
+                        selectedVouchers.removeAll()
+                    }
+                    selectAll.toggle()
+                } label: {
+                    Label(selectAll ? "Tout sélectionner" : "Tout désélectionner", 
+                          systemImage: selectAll ? "checkmark.square" : "square")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
+    }
+    
+    private var vouchersListSection: some View {
+        Section {
+            ForEach(detectedVouchers) { voucher in
+                VoucherSelectionRow(
+                    voucher: voucher,
+                    isSelected: selectedVouchers.contains(voucher.id),
+                    isDuplicate: duplicateVoucherIds.contains(voucher.id)
+                ) {
+                    toggleSelection(voucher.id)
+                }
+            }
+        } header: {
+            Text("Bons détectés")
+        }
     }
     
     private func toggleSelection(_ id: UUID) {
@@ -191,6 +322,10 @@ struct MultiVoucherSelectionView: View {
             }
         }
         
+        // Utiliser les couleurs globales pour tous les bons
+        let colorHex = globalCardColor.toHex()
+        let textColorHex = globalTextColor.toHex()
+        
         // Importer les bons valides
         for detectedVoucher in validVouchers {
             let voucher = Voucher(
@@ -202,7 +337,8 @@ struct MultiVoucherSelectionView: View {
                 codeImageData: detectedVoucher.codeImageData,
                 expirationDate: detectedVoucher.expirationDate,
                 pdfData: pdfData,
-                storeColor: StorePreset.getColor(for: detectedVoucher.storeName ?? "")
+                storeColor: colorHex,
+                textColor: textColorHex
             )
             
             modelContext.insert(voucher)
@@ -210,6 +346,8 @@ struct MultiVoucherSelectionView: View {
             // 📚 Apprentissage : enregistrer chaque enseigne validée
             if let storeName = detectedVoucher.storeName {
                 StoreNameLearning.shared.learnStoreName(storeName)
+                StoreNameLearning.shared.learnStoreColor(colorHex, for: storeName)
+                StoreNameLearning.shared.learnTextColor(textColorHex, for: storeName)
             }
         }
         
@@ -220,6 +358,43 @@ struct MultiVoucherSelectionView: View {
         } catch {
             print("❌ Erreur lors de l'enregistrement: \(error)")
         }
+    }
+    
+    /// Vérifie si deux couleurs sont trop similaires pour une bonne lisibilité
+    private func areColorsTooSimilar(_ color1: Color, _ color2: Color) -> Bool {
+        let hex1 = color1.toHex()
+        let hex2 = color2.toHex()
+        
+        if hex1 == hex2 { return true }
+        
+        let luminance1 = calculateLuminance(hex: hex1)
+        let luminance2 = calculateLuminance(hex: hex2)
+        let contrastRatio = max(luminance1, luminance2) / min(luminance1, luminance2)
+        
+        return contrastRatio < 3.0
+    }
+    
+    private func calculateLuminance(hex: String) -> Double {
+        let rgb = hexToRGB(hex)
+        let r = rgb.r / 255.0
+        let g = rgb.g / 255.0
+        let b = rgb.b / 255.0
+        
+        let rLinear = r <= 0.03928 ? r / 12.92 : pow((r + 0.055) / 1.055, 2.4)
+        let gLinear = g <= 0.03928 ? g / 12.92 : pow((g + 0.055) / 1.055, 2.4)
+        let bLinear = b <= 0.03928 ? b / 12.92 : pow((b + 0.055) / 1.055, 2.4)
+        
+        return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear
+    }
+    
+    private func hexToRGB(_ hex: String) -> (r: Double, g: Double, b: Double) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF)
+        let g = Double((int >> 8) & 0xFF)
+        let b = Double(int & 0xFF)
+        return (r, g, b)
     }
 }
 

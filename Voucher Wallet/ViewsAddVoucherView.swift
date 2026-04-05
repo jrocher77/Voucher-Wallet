@@ -32,6 +32,10 @@ struct AddVoucherView: View {
     @State private var editingVoucher: PDFAnalyzer.DetectedVoucher?
     @State private var showingVoucherEditor = false
     
+    // Couleurs globales pour l'import multi-bons
+    @State private var globalCardColor = Color(hex: "#007AFF")
+    @State private var globalTextColor = Color(hex: "#FFFFFF")
+    
     // Champs du formulaire (pour un seul bon)
     @State private var storeName = ""
     @State private var amount = ""
@@ -208,78 +212,234 @@ struct AddVoucherView: View {
     // MARK: - Multiple Vouchers Section
     
     private var multipleVouchersSection: some View {
-        Section {
-            // Afficher un message si des doublons sont détectés
-            if !duplicateVoucherIds.isEmpty {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.orange)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(duplicateVoucherIds.count) bon(s) déjà présent(s)")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Ces bons ne peuvent pas être importés à nouveau")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+        Group {
+            Section {
+                // Afficher un message si des doublons sont détectés
+                if !duplicateVoucherIds.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.orange)
+                        
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(duplicateVoucherIds.count) bon(s) déjà présent(s)")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Ces bons ne peuvent pas être importés à nouveau")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
                     }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                
+                // Bouton tout sélectionner
+                HStack {
+                    Button {
+                        let nonDuplicateIds = Set(detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.map { $0.id })
+                        
+                        if selectedVoucherIds.count == nonDuplicateIds.count {
+                            selectedVoucherIds.removeAll()
+                        } else {
+                            selectedVoucherIds = nonDuplicateIds
+                        }
+                    } label: {
+                        HStack {
+                            let nonDuplicateCount = detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count
+                            let allNonDuplicatesSelected = selectedVoucherIds.count == nonDuplicateCount
+                            
+                            Image(systemName: allNonDuplicatesSelected ? "checkmark.square.fill" : "square")
+                            Text(allNonDuplicatesSelected ? "Tout désélectionner" : "Tout sélectionner")
+                        }
+                    }
+                    .buttonStyle(.plain)
                     
                     Spacer()
-                }
-                .padding(12)
-                .background(Color.orange.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            
-            // Bouton tout sélectionner
-            HStack {
-                Button {
-                    let nonDuplicateIds = Set(detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.map { $0.id })
                     
-                    if selectedVoucherIds.count == nonDuplicateIds.count {
-                        selectedVoucherIds.removeAll()
-                    } else {
-                        selectedVoucherIds = nonDuplicateIds
-                    }
-                } label: {
-                    HStack {
-                        let nonDuplicateCount = detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count
-                        let allNonDuplicatesSelected = selectedVoucherIds.count == nonDuplicateCount
-                        
-                        Image(systemName: allNonDuplicatesSelected ? "checkmark.square.fill" : "square")
-                        Text(allNonDuplicatesSelected ? "Tout désélectionner" : "Tout sélectionner")
-                    }
+                    Text("\(selectedVoucherIds.count)/\(detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
                 
-                Spacer()
-                
-                Text("\(selectedVoucherIds.count)/\(detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                // Liste des bons
+                ForEach(detectedVouchers) { voucher in
+                    let isDuplicate = duplicateVoucherIds.contains(voucher.id)
+                    
+                    VoucherSelectionRowCompact(
+                        voucher: voucher,
+                        isSelected: selectedVoucherIds.contains(voucher.id),
+                        isDuplicate: isDuplicate,
+                        onTap: {
+                            toggleSelection(voucher.id)
+                        },
+                        onEdit: {
+                            editingVoucher = voucher
+                            showingVoucherEditor = true
+                        }
+                    )
+                }
+            } header: {
+                Text("Bons détectés")
+            } footer: {
+                Text("Appuyez sur un bon pour le modifier, ou sur le cercle pour le sélectionner/désélectionner.")
             }
             
-            // Liste des bons
-            ForEach(detectedVouchers) { voucher in
-                let isDuplicate = duplicateVoucherIds.contains(voucher.id)
-                
-                VoucherSelectionRowCompact(
-                    voucher: voucher,
-                    isSelected: selectedVoucherIds.contains(voucher.id),
-                    isDuplicate: isDuplicate,
-                    onTap: {
-                        toggleSelection(voucher.id)
-                    },
-                    onEdit: {
-                        editingVoucher = voucher
-                        showingVoucherEditor = true
+            // Section de personnalisation globale des couleurs (EN BAS)
+            globalColorCustomizationSection
+        }
+    }
+    
+    // MARK: - Global Color Customization Section
+    
+    private var globalColorCustomizationSection: some View {
+        Section {
+            ColorPicker("Couleur de fond", selection: $globalCardColor, supportsOpacity: false)
+                .onChange(of: globalCardColor) { oldValue, newValue in
+                    // 🎨 Suggestion automatique de couleur de texte basée sur la couleur de fond
+                    if areColorsTooSimilar(newValue, globalTextColor) {
+                        let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: newValue.toHex())
+                        globalTextColor = Color(hex: suggestedTextColor)
                     }
+                }
+            
+            ColorPicker("Couleur du texte", selection: $globalTextColor, supportsOpacity: false)
+            
+            // ⚠️ Avertissement si couleurs trop similaires
+            if areColorsTooSimilar(globalCardColor, globalTextColor) {
+                Label {
+                    Text("⚠️ Les couleurs sont identiques ou trop similaires. Le texte sera illisible.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+            
+            // ✅ Indicateur de bon contraste
+            if !areColorsTooSimilar(globalCardColor, globalTextColor) {
+                Label {
+                    Text("Bon contraste pour la lisibilité")
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .font(.caption)
+                .foregroundStyle(.green)
+            }
+            
+            // Prévisualisation de la carte
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Aperçu")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Enseigne exemple")
+                            .font(.headline)
+                            .foregroundStyle(globalTextColor)
+                        
+                        Text("1234567890")
+                            .font(.caption)
+                            .foregroundStyle(globalTextColor.opacity(0.8))
+                    }
+                    Spacer()
+                    Text("50,00 €")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(globalTextColor)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(globalCardColor)
                 )
             }
+            
+            // Préréglages de couleurs pour le fond
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Couleurs de fond populaires")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(ColorPresets.allPresets, id: \.hex) { preset in
+                            Button {
+                                globalCardColor = Color(hex: preset.hex)
+                                // 🎨 Suggestion automatique de couleur de texte
+                                let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: preset.hex)
+                                globalTextColor = Color(hex: suggestedTextColor)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color(hex: preset.hex))
+                                        .frame(width: 44, height: 44)
+                                        .overlay {
+                                            if globalCardColor.isSimilar(to: Color(hex: preset.hex)) {
+                                                Circle()
+                                                    .stroke(Color.primary, lineWidth: 3)
+                                            }
+                                        }
+                                    
+                                    Text(preset.name)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+            
+            // Préréglages pour la couleur de texte
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Couleurs de texte populaires")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                
+                HStack(spacing: 12) {
+                    ForEach([
+                        ("Blanc", "#FFFFFF"),
+                        ("Noir", "#000000"),
+                        ("Gris clair", "#E5E5EA"),
+                        ("Gris foncé", "#3A3A3C")
+                    ], id: \.1) { preset in
+                        Button {
+                            globalTextColor = Color(hex: preset.1)
+                        } label: {
+                            VStack(spacing: 4) {
+                                Circle()
+                                    .fill(Color(hex: preset.1))
+                                    .frame(width: 40, height: 40)
+                                    .overlay {
+                                        Circle()
+                                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                        if globalTextColor.isSimilar(to: Color(hex: preset.1)) {
+                                            Circle()
+                                                .stroke(Color.primary, lineWidth: 3)
+                                        }
+                                    }
+                                
+                                Text(preset.0)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
         } header: {
-            Text("Bons détectés")
+            Text("Personnalisation des couleurs (tous les bons)")
         } footer: {
-            Text("Appuyez sur un bon pour le modifier, ou sur le cercle pour le sélectionner/désélectionner.")
+            Text("Ces couleurs seront appliquées à tous les bons sélectionnés.")
         }
     }
     
@@ -759,6 +919,21 @@ struct AddVoucherView: View {
                             .map { $0.id }
                     )
                     
+                    // 🎨 Initialiser les couleurs globales avec la couleur de la première enseigne détectée
+                    if let firstVoucher = detectedVouchers.first {
+                        if let hexColor = firstVoucher.storeColor {
+                            globalCardColor = Color(hex: hexColor)
+                        } else if let storeName = firstVoucher.storeName {
+                            globalCardColor = Color(hex: StorePreset.getColor(for: storeName))
+                        }
+                        
+                        // Suggérer automatiquement la couleur de texte
+                        let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: globalCardColor.toHex())
+                        globalTextColor = Color(hex: suggestedTextColor)
+                        
+                        print("🎨 Couleurs globales initialisées : fond=\(globalCardColor.toHex()), texte=\(globalTextColor.toHex())")
+                    }
+                    
                     return
                 }
                 
@@ -851,20 +1026,12 @@ struct AddVoucherView: View {
             }
         }
         
+        // Utiliser les couleurs globales pour tous les bons
+        let colorHex = globalCardColor.toHex()
+        let textColorHex = globalTextColor.toHex()
+        
         // Importer seulement les bons valides
         for detectedVoucher in validVouchers {
-            // Utiliser la couleur du bon détecté ou la couleur par défaut pour l'enseigne
-            let colorHex = detectedVoucher.storeColor ?? StorePreset.getColor(for: detectedVoucher.storeName ?? "")
-            
-            // Récupérer la couleur de texte apprise ou utiliser blanc par défaut
-            let textColorHex: String
-            if let storeName = detectedVoucher.storeName,
-               let learnedTextColor = StoreNameLearning.shared.getLearnedTextColor(for: storeName) {
-                textColorHex = learnedTextColor
-            } else {
-                textColorHex = "#FFFFFF"  // Blanc par défaut
-            }
-            
             let voucher = Voucher(
                 storeName: detectedVoucher.storeName ?? "Bon d'achat",
                 amount: detectedVoucher.amount,

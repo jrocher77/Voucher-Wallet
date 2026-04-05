@@ -13,12 +13,17 @@ struct PDFImportHandler: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
+    // Requête pour récupérer tous les bons existants
+    @Query private var existingVouchers: [Voucher]
+    
     let pdfData: Data
     
     @State private var isAnalyzing = true
     @State private var analysisResult: PDFAnalyzer.AnalysisResult?
     @State private var showingError = false
     @State private var errorMessage = ""
+    @State private var showingDuplicateAlert = false
+    @State private var duplicateVoucherNumbers: [String] = []
     
     // États pour la progression de l'analyse
     @State private var progressMessage = "Chargement du PDF..."
@@ -127,6 +132,15 @@ struct PDFImportHandler: View {
             } message: {
                 Text(errorMessage)
             }
+            .alert("Bon(s) déjà importé(s)", isPresented: $showingDuplicateAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                if duplicateVoucherNumbers.count == 1 {
+                    Text("Le bon avec le numéro \(duplicateVoucherNumbers[0]) existe déjà dans votre wallet.")
+                } else {
+                    Text("Les bons suivants existent déjà dans votre wallet :\n\n\(duplicateVoucherNumbers.joined(separator: "\n"))")
+                }
+            }
             .sheet(isPresented: $showingVoucherEditor) {
                 if let voucher = editingVoucher {
                     VoucherEditorView(
@@ -189,6 +203,17 @@ struct PDFImportHandler: View {
                 TextField("Numéro du bon", text: $voucherNumber)
                     .textContentType(.none)
                     .autocorrectionDisabled()
+                
+                // ⚠️ Avertissement si le numéro existe déjà
+                if !voucherNumber.isEmpty && isVoucherNumberDuplicate(voucherNumber) {
+                    Label {
+                        Text("Ce numéro de bon existe déjà dans votre wallet")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                }
                 
                 if let result = analysisResult, !result.possibleVoucherNumbers.isEmpty {
                     Menu("Numéros suggérés") {
@@ -343,7 +368,12 @@ struct PDFImportHandler: View {
     }
     
     private var isFormValid: Bool {
-        !storeName.isEmpty && !voucherNumber.isEmpty
+        !storeName.isEmpty && !voucherNumber.isEmpty && !isVoucherNumberDuplicate(voucherNumber)
+    }
+    
+    /// Vérifie si un numéro de bon existe déjà dans le wallet
+    private func isVoucherNumberDuplicate(_ number: String) -> Bool {
+        existingVouchers.contains { $0.voucherNumber == number }
     }
     
     // MARK: - Actions Multi-Bons
@@ -365,7 +395,31 @@ struct PDFImportHandler: View {
     private func importSelectedVouchers() {
         let selectedVouchers = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
         
-        for detectedVoucher in selectedVouchers {
+        // 🚫 Filtrer les doublons
+        var duplicates: [String] = []
+        var validVouchers: [PDFAnalyzer.DetectedVoucher] = []
+        
+        for voucher in selectedVouchers {
+            if isVoucherNumberDuplicate(voucher.voucherNumber) {
+                duplicates.append(voucher.voucherNumber)
+            } else {
+                validVouchers.append(voucher)
+            }
+        }
+        
+        // Afficher une alerte si des doublons sont détectés
+        if !duplicates.isEmpty {
+            duplicateVoucherNumbers = duplicates
+            showingDuplicateAlert = true
+            
+            // Si tous les bons sont des doublons, on s'arrête là
+            if validVouchers.isEmpty {
+                return
+            }
+        }
+        
+        // Importer seulement les bons valides
+        for detectedVoucher in validVouchers {
             let codeImage: UIImage?
             if detectedVoucher.codeType == .qrCode {
                 codeImage = BarcodeGenerator.generateQRCode(from: detectedVoucher.voucherNumber)
@@ -401,8 +455,15 @@ struct PDFImportHandler: View {
         
         do {
             try modelContext.save()
-            print("✅ \(selectedVouchers.count) bon(s) importé(s) avec succès")
-            dismiss()
+            print("✅ \(validVouchers.count) bon(s) importé(s) avec succès")
+            if !duplicates.isEmpty {
+                print("⚠️ \(duplicates.count) doublon(s) ignoré(s)")
+            }
+            
+            // Fermer seulement si au moins un bon a été importé
+            if !validVouchers.isEmpty {
+                dismiss()
+            }
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
@@ -540,6 +601,13 @@ struct PDFImportHandler: View {
     }
     
     private func saveVoucher() {
+        // 🚫 Vérifier si le bon existe déjà
+        if isVoucherNumberDuplicate(voucherNumber) {
+            duplicateVoucherNumbers = [voucherNumber]
+            showingDuplicateAlert = true
+            return
+        }
+        
         let codeImage: UIImage?
         if codeType == .qrCode {
             codeImage = BarcodeGenerator.generateQRCode(from: voucherNumber)

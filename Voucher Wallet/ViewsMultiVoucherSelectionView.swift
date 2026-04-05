@@ -12,11 +12,16 @@ struct MultiVoucherSelectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
+    // Requête pour récupérer tous les bons existants
+    @Query private var existingVouchers: [Voucher]
+    
     let detectedVouchers: [PDFAnalyzer.DetectedVoucher]
     let pdfData: Data
     
     @State private var selectedVouchers: Set<UUID> = []
     @State private var selectAll = true
+    @State private var showingDuplicateAlert = false
+    @State private var duplicateVoucherNumbers: [String] = []
     
     var body: some View {
         NavigationStack {
@@ -58,6 +63,15 @@ struct MultiVoucherSelectionView: View {
             .onAppear {
                 // Sélectionner tous par défaut
                 selectedVouchers = Set(detectedVouchers.map { $0.id })
+            }
+            .alert("Bon(s) déjà importé(s)", isPresented: $showingDuplicateAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                if duplicateVoucherNumbers.count == 1 {
+                    Text("Le bon avec le numéro \(duplicateVoucherNumbers[0]) existe déjà dans votre wallet.")
+                } else {
+                    Text("Les bons suivants existent déjà dans votre wallet :\n\n\(duplicateVoucherNumbers.joined(separator: "\n"))")
+                }
             }
         }
     }
@@ -112,10 +126,39 @@ struct MultiVoucherSelectionView: View {
         }
     }
     
+    /// Vérifie si un numéro de bon existe déjà dans le wallet
+    private func isVoucherNumberDuplicate(_ number: String) -> Bool {
+        existingVouchers.contains { $0.voucherNumber == number }
+    }
+    
     private func importSelectedVouchers() {
         let vouchersToImport = detectedVouchers.filter { selectedVouchers.contains($0.id) }
         
-        for detectedVoucher in vouchersToImport {
+        // 🚫 Filtrer les doublons
+        var duplicates: [String] = []
+        var validVouchers: [PDFAnalyzer.DetectedVoucher] = []
+        
+        for voucher in vouchersToImport {
+            if isVoucherNumberDuplicate(voucher.voucherNumber) {
+                duplicates.append(voucher.voucherNumber)
+            } else {
+                validVouchers.append(voucher)
+            }
+        }
+        
+        // Afficher une alerte si des doublons sont détectés
+        if !duplicates.isEmpty {
+            duplicateVoucherNumbers = duplicates
+            showingDuplicateAlert = true
+            
+            // Si tous les bons sont des doublons, on s'arrête là
+            if validVouchers.isEmpty {
+                return
+            }
+        }
+        
+        // Importer seulement les bons valides
+        for detectedVoucher in validVouchers {
             let voucher = Voucher(
                 storeName: detectedVoucher.storeName ?? "Bon d'achat",
                 amount: detectedVoucher.amount,
@@ -138,8 +181,15 @@ struct MultiVoucherSelectionView: View {
         
         do {
             try modelContext.save()
-            print("✅ \(vouchersToImport.count) bon(s) importé(s) avec succès")
-            dismiss()
+            print("✅ \(validVouchers.count) bon(s) importé(s) avec succès")
+            if !duplicates.isEmpty {
+                print("⚠️ \(duplicates.count) doublon(s) ignoré(s)")
+            }
+            
+            // Fermer seulement si au moins un bon a été importé
+            if !validVouchers.isEmpty {
+                dismiss()
+            }
         } catch {
             print("❌ Erreur lors de l'enregistrement: \(error)")
         }

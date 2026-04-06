@@ -21,6 +21,9 @@ struct VoucherDetailView: View {
     @State private var showingEditView = false
     @State private var expenseToPresent: ExpensePresentation?
     @State private var isVoucherDeleted = false
+    @State private var favoritesManager: FavoritesManager?
+    @State private var showingFavoriteLimitAlert = false
+    @State private var currentFavorites: [Voucher] = []
     
     enum ExpensePresentation: Identifiable {
         case new
@@ -123,6 +126,15 @@ struct VoucherDetailView: View {
                     Image(systemName: "ellipsis.circle")
                 }
             }
+            
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: toggleFavorite) {
+                    Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(voucher.isFavorite ? .yellow : .primary)
+                        .font(.title3)
+                        .symbolEffect(.bounce, value: voucher.isFavorite)
+                }
+            }
         }
         .alert("Supprimer ce bon ?", isPresented: $showingDeleteAlert) {
             Button("Annuler", role: .cancel) { }
@@ -132,9 +144,19 @@ struct VoucherDetailView: View {
         } message: {
             Text("Cette action est irréversible.")
         }
+        .alert("Limite atteinte", isPresented: $showingFavoriteLimitAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Vous ne pouvez avoir que 4 cartes en favoris. Veuillez d'abord retirer une carte des favoris.")
+        }
         .onAppear {
             // Enregistrer la luminosité initiale
             initialBrightness = UIScreen.main.brightness
+            
+            // Initialiser le manager des favoris
+            if favoritesManager == nil {
+                favoritesManager = FavoritesManager(modelContext: modelContext)
+            }
         }
         .onDisappear {
             // Restaurer la luminosité d'origine
@@ -428,6 +450,33 @@ struct VoucherDetailView: View {
         modelContext.delete(voucher)
         try? modelContext.save()
         dismiss()
+    }
+    
+    private func toggleFavorite() {
+        guard let manager = favoritesManager else { return }
+        
+        let result = manager.toggleFavorite(voucher)
+        
+        switch result {
+        case .added:
+            // Feedback haptique pour confirmer l'ajout
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.impactOccurred()
+            
+        case .removed:
+            // Feedback haptique léger pour le retrait
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+            
+        case .limitReached(let favorites):
+            // Afficher l'alerte
+            currentFavorites = favorites
+            showingFavoriteLimitAlert = true
+            
+            // Feedback haptique d'erreur
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.warning)
+        }
     }
     
     private func restoreBrightness() {

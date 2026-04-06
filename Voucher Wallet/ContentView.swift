@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var showingAddVoucher = false
     @State private var selectedStoreFilter: String?
     @State private var showExpiredVouchers = true
+    @State private var favoritesManager: FavoritesManager?
     
     var filteredVouchers: [Voucher] {
         var result = vouchers
@@ -33,7 +34,16 @@ struct ContentView: View {
             }
         }
         
-        return result
+        // Trier : favoris en premier, puis par date d'ajout
+        return result.sorted { lhs, rhs in
+            if lhs.isFavorite && !rhs.isFavorite {
+                return true
+            } else if !lhs.isFavorite && rhs.isFavorite {
+                return false
+            } else {
+                return lhs.dateAdded > rhs.dateAdded
+            }
+        }
     }
     
     var uniqueStores: [String] {
@@ -83,6 +93,11 @@ struct ContentView: View {
                     PDFImportHandler(pdfData: pdfData)
                 }
             }
+            .onAppear {
+                if favoritesManager == nil {
+                    favoritesManager = FavoritesManager(modelContext: modelContext)
+                }
+            }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
     }
@@ -127,9 +142,11 @@ struct ContentView: View {
                         VoucherCardView(voucher: voucher)
                     }
                     .buttonStyle(.plain)
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
             .padding()
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: filteredVouchers.map { $0.id })
         }
     }
     

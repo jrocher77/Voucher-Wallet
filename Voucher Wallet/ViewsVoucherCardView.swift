@@ -18,7 +18,13 @@ struct VoucherCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // En-tête avec nom de l'enseigne
-            HStack {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                // Espace pour l'étoile favori
+                if voucher.isFavorite {
+                    Spacer()
+                        .frame(width: 28)
+                }
+                
                 Text(voucher.storeName)
                     .font(.title2)
                     .fontWeight(.bold)
@@ -27,22 +33,23 @@ struct VoucherCardView: View {
                 Spacer()
                 
                 if let amount = voucher.amount {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        // Solde restant (principal)
-                        Text(voucher.remainingBalance.formattedEuro)
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(textColor)
-                        
-                        // Montant initial (petit)
-                        if voucher.totalExpenses > 0 {
-                            Text("sur \(amount.formattedEuro)")
-                                .font(.caption2)
-                                .foregroundStyle(textColor.opacity(0.7))
+                    // Solde restant (principal) - aligné sur la baseline
+                    Text(voucher.remainingBalance.formattedEuro)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(textColor)
+                        .overlay(alignment: .bottom) {
+                            // Montant initial (petit) en dessous
+                            if voucher.totalExpenses > 0 {
+                                Text("sur \(amount.formattedEuro)")
+                                    .font(.caption2)
+                                    .foregroundStyle(textColor.opacity(0.7))
+                                    .offset(y: 14)
+                            }
                         }
-                    }
                 }
             }
+            .padding(.top, -8)
             
             Spacer()
             
@@ -90,19 +97,51 @@ struct VoucherCardView: View {
                 .fill(Color(hex: voucher.storeColor))
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
         )
+        .overlay(alignment: .topLeading) {
+            // Badge favori
+            if voucher.isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.title2)
+                    .foregroundStyle(.yellow)
+                    .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                    .padding(.leading, 12)
+                    .padding(.top, 12)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: voucher.isFavorite)
     }
 }
 
 #Preview {
-    VoucherCardView(voucher: Voucher(
-        storeName: "Carrefour",
-        amount: 50.0,
-        voucherNumber: "1234567890123",
-        pinCode: "5678",
-        codeType: .barcode,
-        expirationDate: Date().addingTimeInterval(86400 * 30),
-        storeColor: "#0055A5",
-        textColor: "#FFFFFF"
-    ))
+    VStack(spacing: 20) {
+        // Carte normale
+        VoucherCardView(voucher: Voucher(
+            storeName: "Carrefour",
+            amount: 50.0,
+            voucherNumber: "1234567890123",
+            pinCode: "5678",
+            codeType: .barcode,
+            expirationDate: Date().addingTimeInterval(86400 * 30),
+            storeColor: "#0055A5",
+            textColor: "#FFFFFF"
+        ))
+        
+        // Carte favorite
+        VoucherCardView(voucher: {
+            let voucher = Voucher(
+                storeName: "Fnac",
+                amount: 100.0,
+                voucherNumber: "9876543210987",
+                pinCode: "1234",
+                codeType: .qrCode,
+                expirationDate: Date().addingTimeInterval(86400 * 60),
+                storeColor: "#F39200",
+                textColor: "#000000"
+            )
+            voucher.isFavorite = true
+            return voucher
+        }())
+    }
     .padding()
 }

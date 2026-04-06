@@ -26,6 +26,8 @@ final class Voucher {
     @Relationship(deleteRule: .cascade, inverse: \Expense.voucher)
     var expenses: [Expense] = []
     
+    var isFavorite: Bool = false
+    
     // Propriété calculée pour le solde restant
     @Transient
     var remainingBalance: Double {

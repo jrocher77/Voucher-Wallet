@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var showingAddVoucher = false
     @State private var selectedStoreFilter: String?
     @State private var showExpiredVouchers = true
+    @State private var navigationPath = NavigationPath()
     
     var filteredVouchers: [Voucher] {
         var result = vouchers
@@ -50,7 +51,7 @@ struct ContentView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if vouchers.isEmpty {
                     emptyStateView
@@ -59,6 +60,9 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Mes Bons")
+            .navigationDestination(for: Voucher.self) { voucher in
+                VoucherDetailView(voucher: voucher)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -81,6 +85,15 @@ struct ContentView: View {
             .sheet(isPresented: $showingAddVoucher) {
                 AddVoucherView()
             }
+            .onChange(of: showingAddVoucher) { oldValue, newValue in
+                // Quand on ferme la vue d'ajout, recharger le widget
+                if oldValue && !newValue {
+                    // Petit délai pour laisser SwiftData sauvegarder
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        WidgetReloader.reloadAllWidgets()
+                    }
+                }
+            }
             .sheet(isPresented: Binding(
                 get: { urlHandler.shouldShowImport },
                 set: { if !$0 { 
@@ -90,6 +103,26 @@ struct ContentView: View {
             )) {
                 if let pdfData = urlHandler.pdfData {
                     PDFImportHandler(pdfData: pdfData)
+                }
+            }
+            .onChange(of: urlHandler.shouldShowImport) { oldValue, newValue in
+                // Quand on ferme l'import PDF, recharger le widget
+                if oldValue && !newValue {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        WidgetReloader.reloadAllWidgets()
+                    }
+                }
+            }
+            .onChange(of: urlHandler.selectedVoucherID) { oldValue, newValue in
+                guard let voucherID = newValue else { return }
+                
+                // Trouver le voucher correspondant
+                if let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                    // Naviguer vers le détail
+                    navigationPath.append(voucher)
+                    
+                    // Réinitialiser l'ID sélectionné
+                    urlHandler.selectedVoucherID = nil
                 }
             }
         }
@@ -130,8 +163,8 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 ForEach(filteredVouchers) { voucher in
-                    NavigationLink {
-                        VoucherDetailView(voucher: voucher)
+                    Button {
+                        navigationPath.append(voucher)
                     } label: {
                         VoucherCardView(voucher: voucher)
                     }

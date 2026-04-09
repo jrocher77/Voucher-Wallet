@@ -445,6 +445,12 @@ struct VoucherDetailView: View {
     private func deleteVoucher() {
         modelContext.delete(voucher)
         try? modelContext.save()
+        
+        // Recharger le widget si la carte était en favori
+        if voucher.isFavorite {
+            WidgetReloader.reloadFavoriteVouchersWidget()
+        }
+        
         dismiss()
     }
     
@@ -460,9 +466,13 @@ struct VoucherDetailView: View {
         switch result {
         case .added:
             generator.impactOccurred()
+            // Recharger le widget quand on ajoute un favori
+            WidgetReloader.reloadFavoriteVouchersWidget()
             
         case .removed:
             generator.impactOccurred()
+            // Recharger le widget quand on retire un favori
+            WidgetReloader.reloadFavoriteVouchersWidget()
             
         case .limitReached(let favorites):
             currentFavorites = favorites

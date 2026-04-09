@@ -14,7 +14,34 @@
 		3F736F8D2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F8C2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift */; };
 		3F736F8F2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F8E2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift */; };
 		3F736F912F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F902F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift */; };
+		3F7370612F884655003FEEE0 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F7370602F884655003FEEE0 /* WidgetKit.framework */; };
+		3F7370632F884655003FEEE0 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F7370622F884655003FEEE0 /* SwiftUI.framework */; };
+		3F7370722F884655003FEEE0 /* VoucherWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3F73705E2F884655003FEEE0 /* VoucherWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3F7370702F884655003FEEE0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3F5725202F7EBE8C00E99806 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3F73705D2F884655003FEEE0;
+			remoteInfo = VoucherWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		3F7370772F884655003FEEE0 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3F7370722F884655003FEEE0 /* VoucherWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		3F5725282F7EBE8C00E99806 /* Voucher Wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Voucher Wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -25,12 +52,59 @@
 		3F736F8C2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsColorCustomizationSection.swift; sourceTree = "<group>"; };
 		3F736F8E2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsVoucherFormFields.swift; sourceTree = "<group>"; };
 		3F736F902F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsMultiVoucherList.swift; sourceTree = "<group>"; };
+		3F73705E2F884655003FEEE0 /* VoucherWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VoucherWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F7370602F884655003FEEE0 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		3F7370622F884655003FEEE0 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		3F7370832F8849F2003FEEE0 /* VoucherWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VoucherWidgetExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3F7370732F884655003FEEE0 /* Exceptions for "VoucherWidget" folder in "VoucherWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3F73705D2F884655003FEEE0 /* VoucherWidgetExtension */;
+		};
+		3F73707B2F884840003FEEE0 /* Exceptions for "Voucher Wallet" folder in "VoucherWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ModelsExpense.swift,
+				ModelsVoucher.swift,
+				SharedModelContainer.swift,
+				"UtilitiesColorExtension 2.swift",
+				UtilitiesColorExtensions.swift,
+				UtilitiesPDFAnalyzerExtensions.swift,
+				WidgetsFavoriteVouchersWidget.swift,
+			);
+			target = 3F73705D2F884655003FEEE0 /* VoucherWidgetExtension */;
+		};
+		3F7370862F884DF1003FEEE0 /* Exceptions for "Voucher Wallet" folder in "Voucher Wallet" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ExtensionsVoucherExtensions.swift,
+				TestsFavoriteVouchersWidgetTests.swift,
+			);
+			target = 3F5725272F7EBE8C00E99806 /* Voucher Wallet */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3F57252A2F7EBE8C00E99806 /* Voucher Wallet */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3F7370862F884DF1003FEEE0 /* Exceptions for "Voucher Wallet" folder in "Voucher Wallet" target */,
+				3F73707B2F884840003FEEE0 /* Exceptions for "Voucher Wallet" folder in "VoucherWidgetExtension" target */,
+			);
 			path = "Voucher Wallet";
+			sourceTree = "<group>";
+		};
+		3F7370642F884655003FEEE0 /* VoucherWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3F7370732F884655003FEEE0 /* Exceptions for "VoucherWidget" folder in "VoucherWidgetExtension" target */,
+			);
+			path = VoucherWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -43,13 +117,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3F73705B2F884655003FEEE0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3F7370632F884655003FEEE0 /* SwiftUI.framework in Frameworks */,
+				3F7370612F884655003FEEE0 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		3F57251F2F7EBE8C00E99806 = {
 			isa = PBXGroup;
 			children = (
+				3F7370832F8849F2003FEEE0 /* VoucherWidgetExtension.entitlements */,
 				3F57252A2F7EBE8C00E99806 /* Voucher Wallet */,
+				3F7370642F884655003FEEE0 /* VoucherWidget */,
+				3F73705F2F884655003FEEE0 /* Frameworks */,
 				3F5725292F7EBE8C00E99806 /* Products */,
 				3F736F842F883B31003FEEE0 /* UtilitiesColorContrastHelper.swift */,
 				3F736F862F883B3C003FEEE0 /* UtilitiesVoucherDuplicateDetector.swift */,
@@ -65,8 +151,18 @@
 			isa = PBXGroup;
 			children = (
 				3F5725282F7EBE8C00E99806 /* Voucher Wallet.app */,
+				3F73705E2F884655003FEEE0 /* VoucherWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3F73705F2F884655003FEEE0 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3F7370602F884655003FEEE0 /* WidgetKit.framework */,
+				3F7370622F884655003FEEE0 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -79,10 +175,12 @@
 				3F5725242F7EBE8C00E99806 /* Sources */,
 				3F5725252F7EBE8C00E99806 /* Frameworks */,
 				3F5725262F7EBE8C00E99806 /* Resources */,
+				3F7370772F884655003FEEE0 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				3F7370712F884655003FEEE0 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				3F57252A2F7EBE8C00E99806 /* Voucher Wallet */,
@@ -93,6 +191,28 @@
 			productName = "Voucher Wallet";
 			productReference = 3F5725282F7EBE8C00E99806 /* Voucher Wallet.app */;
 			productType = "com.apple.product-type.application";
+		};
+		3F73705D2F884655003FEEE0 /* VoucherWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3F7370742F884655003FEEE0 /* Build configuration list for PBXNativeTarget "VoucherWidgetExtension" */;
+			buildPhases = (
+				3F73705A2F884655003FEEE0 /* Sources */,
+				3F73705B2F884655003FEEE0 /* Frameworks */,
+				3F73705C2F884655003FEEE0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				3F7370642F884655003FEEE0 /* VoucherWidget */,
+			);
+			name = VoucherWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = VoucherWidgetExtension;
+			productReference = 3F73705E2F884655003FEEE0 /* VoucherWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -105,6 +225,9 @@
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					3F5725272F7EBE8C00E99806 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					3F73705D2F884655003FEEE0 = {
 						CreatedOnToolsVersion = 26.4;
 					};
 				};
@@ -124,12 +247,20 @@
 			projectRoot = "";
 			targets = (
 				3F5725272F7EBE8C00E99806 /* Voucher Wallet */,
+				3F73705D2F884655003FEEE0 /* VoucherWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		3F5725262F7EBE8C00E99806 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3F73705C2F884655003FEEE0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -153,7 +284,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3F73705A2F884655003FEEE0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		3F7370712F884655003FEEE0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3F73705D2F884655003FEEE0 /* VoucherWidgetExtension */;
+			targetProxy = 3F7370702F884655003FEEE0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		3F5725312F7EBE8D00E99806 /* Debug */ = {
@@ -280,6 +426,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Voucher Wallet/Voucher Wallet.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -321,6 +468,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Voucher Wallet/Voucher Wallet.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -357,6 +505,70 @@
 			};
 			name = Release;
 		};
+		3F7370752F884655003FEEE0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = VoucherWidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5U5279P9WF;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VoucherWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VoucherWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "jrocher.Voucher-Wallet.VoucherWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		3F7370762F884655003FEEE0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = VoucherWidgetExtension.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5U5279P9WF;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = VoucherWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VoucherWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "jrocher.Voucher-Wallet.VoucherWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -374,6 +586,15 @@
 			buildConfigurations = (
 				3F5725342F7EBE8D00E99806 /* Debug */,
 				3F5725352F7EBE8D00E99806 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3F7370742F884655003FEEE0 /* Build configuration list for PBXNativeTarget "VoucherWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3F7370752F884655003FEEE0 /* Debug */,
+				3F7370762F884655003FEEE0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

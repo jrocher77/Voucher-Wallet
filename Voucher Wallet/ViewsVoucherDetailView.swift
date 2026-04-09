@@ -13,7 +13,7 @@ struct VoucherDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @State private var initialBrightness: Double = UIScreen.main.brightness
+    @State private var initialBrightness: Double = 0.5
     @State private var isBrightnessMaximized = false
     @State private var showingDeleteAlert = false
     @State private var showingPDFViewer = false
@@ -109,17 +109,18 @@ struct VoucherDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button {
-                        showingEditView = true
-                    } label: {
+                    Button(action: toggleFavorite) {
+                        Label(voucher.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris", 
+                              systemImage: voucher.isFavorite ? "star.fill" : "star")
+                    }
+                    
+                    Button(action: { showingEditView = true }) {
                         Label("Modifier", systemImage: "pencil")
                     }
                     
                     Divider()
                     
-                    Button(role: .destructive) {
-                        showingDeleteAlert = true
-                    } label: {
+                    Button(role: .destructive, action: { showingDeleteAlert = true }) {
                         Label("Supprimer", systemImage: "trash")
                     }
                 } label: {
@@ -127,6 +128,7 @@ struct VoucherDetailView: View {
                 }
             }
             
+            /*
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: toggleFavorite) {
                     Image(systemName: voucher.isFavorite ? "star.fill" : "star")
@@ -135,6 +137,7 @@ struct VoucherDetailView: View {
                         .symbolEffect(.bounce, value: voucher.isFavorite)
                 }
             }
+            */
         }
         .alert("Supprimer ce bon ?", isPresented: $showingDeleteAlert) {
             Button("Annuler", role: .cancel) { }
@@ -150,12 +153,17 @@ struct VoucherDetailView: View {
             Text("Vous ne pouvez avoir que 4 cartes en favoris. Veuillez d'abord retirer une carte des favoris.")
         }
         .onAppear {
-            // Enregistrer la luminosité initiale
-            initialBrightness = UIScreen.main.brightness
-            
-            // Initialiser le manager des favoris
-            if favoritesManager == nil {
-                favoritesManager = FavoritesManager(modelContext: modelContext)
+            // Enregistrer la luminosité initiale de manière asynchrone
+            Task { @MainActor in
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                    let screen = windowScene.screen
+                    initialBrightness = screen.brightness
+                }
+                
+                // Initialiser le manager des favoris
+                if favoritesManager == nil {
+                    favoritesManager = FavoritesManager(modelContext: modelContext)
+                }
             }
         }
         .onDisappear {
@@ -222,22 +230,30 @@ struct VoucherDetailView: View {
                 if let codeImage = generateCodeImage() {
                     if voucher.codeType == .qrCode {
                         // QR Code : carré centré
-                        Image(uiImage: codeImage)
-                            .resizable()
-                            .interpolation(.none)
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(40)
+                        Button(action: {
+                            toggleBrightness()
+                        }) {
+                            Image(uiImage: codeImage)
+                                .resizable()
+                                .interpolation(.none)
+                                .aspectRatio(contentMode: .fit)
+                                .padding(40)
+                        }
+                        .buttonStyle(.plain)
                     } else {
                         // Code-barres : étire horizontalement
-                        Image(uiImage: codeImage)
-                            .resizable()
-                            .interpolation(.none)
-                            .aspectRatio(contentMode: .fill)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 150)
-                            .clipped()
-                            .padding(.horizontal, 20)
+                        Button(action: {
+                            toggleBrightness()
+                        }) {
+                            Image(uiImage: codeImage)
+                                .resizable()
+                                .interpolation(.none)
+                                .aspectRatio(contentMode: .fill)
+                                .frame(height: 150)
+                                .clipped()
+                                .padding(.horizontal, 20)
+                        }
+                        .buttonStyle(.plain)
                     }
                 } else {
                     VStack(spacing: 12) {
@@ -253,26 +269,6 @@ struct VoucherDetailView: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: voucher.codeType == .qrCode ? 350 : 220)
-            .padding(.horizontal)
-            .onTapGesture {
-                toggleBrightness()
-            }
-            
-            // Numéro du bon en texte
-            VStack(spacing: 8) {
-                Text("Numéro du bon")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(voucher.voucherNumber)
-                    .font(.system(.title3, design: .monospaced))
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-                    .textSelection(.enabled)
-            }
-            .padding()
-            .background(Color(.systemGray6))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
             .padding(.horizontal)
         }
     }
@@ -455,43 +451,51 @@ struct VoucherDetailView: View {
     private func toggleFavorite() {
         guard let manager = favoritesManager else { return }
         
+        // Feedback haptique immédiat
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.prepare()
+        
         let result = manager.toggleFavorite(voucher)
         
         switch result {
         case .added:
-            // Feedback haptique pour confirmer l'ajout
-            let generator = UIImpactFeedbackGenerator(style: .medium)
             generator.impactOccurred()
             
         case .removed:
-            // Feedback haptique léger pour le retrait
-            let generator = UIImpactFeedbackGenerator(style: .light)
             generator.impactOccurred()
             
         case .limitReached(let favorites):
-            // Afficher l'alerte
             currentFavorites = favorites
             showingFavoriteLimitAlert = true
             
-            // Feedback haptique d'erreur
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.warning)
+            let notificationGenerator = UINotificationFeedbackGenerator()
+            notificationGenerator.notificationOccurred(.warning)
         }
     }
     
     private func restoreBrightness() {
-        UIScreen.main.brightness = initialBrightness
+        // Compatible iOS 26+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            let screen = windowScene.screen
+            screen.brightness = initialBrightness
+        }
         isBrightnessMaximized = false
     }
     
     private func toggleBrightness() {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return
+        }
+        
+        let screen = windowScene.screen
+        
         if isBrightnessMaximized {
             // Restaurer la luminosité initiale
-            UIScreen.main.brightness = initialBrightness
+            screen.brightness = initialBrightness
             isBrightnessMaximized = false
         } else {
             // Passer au maximum
-            UIScreen.main.brightness = 1.0
+            screen.brightness = 1.0
             isBrightnessMaximized = true
         }
     }
@@ -574,15 +578,11 @@ struct ExpenseRow: View {
                 .foregroundColor(.red)
             
             Menu {
-                Button {
-                    onEdit()
-                } label: {
+                Button(action: onEdit) {
                     Label("Modifier", systemImage: "pencil")
                 }
                 
-                Button(role: .destructive) {
-                    showingDeleteAlert = true
-                } label: {
+                Button(role: .destructive, action: { showingDeleteAlert = true }) {
                     Label("Supprimer", systemImage: "trash")
                 }
             } label: {
@@ -640,3 +640,4 @@ struct ShareSheetView: UIViewControllerRepresentable {
         ))
     }
 }
+

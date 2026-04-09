@@ -82,7 +82,7 @@ struct PDFImportHandler: View {
                         .padding(.vertical, 8)
                     }
                 } else {
-                    if let result = analysisResult {
+                    if analysisResult != nil {
                         Section {
                             Label("PDF analysé avec succès", systemImage: "checkmark.circle.fill")
                                 .foregroundColor(.green)

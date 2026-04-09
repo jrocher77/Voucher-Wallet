@@ -16,7 +16,6 @@ struct ContentView: View {
     @State private var showingAddVoucher = false
     @State private var selectedStoreFilter: String?
     @State private var showExpiredVouchers = true
-    @State private var favoritesManager: FavoritesManager?
     
     var filteredVouchers: [Voucher] {
         var result = vouchers
@@ -93,11 +92,6 @@ struct ContentView: View {
                     PDFImportHandler(pdfData: pdfData)
                 }
             }
-            .onAppear {
-                if favoritesManager == nil {
-                    favoritesManager = FavoritesManager(modelContext: modelContext)
-                }
-            }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
     }
@@ -157,7 +151,11 @@ struct ContentView: View {
                 Button {
                     selectedStoreFilter = nil
                 } label: {
-                    Label("Toutes", systemImage: selectedStoreFilter == nil ? "checkmark" : "")
+                    if selectedStoreFilter == nil {
+                        Label("Toutes", systemImage: "checkmark")
+                    } else {
+                        Text("Toutes")
+                    }
                 }
                 
                 Divider()
@@ -166,7 +164,11 @@ struct ContentView: View {
                     Button {
                         selectedStoreFilter = store
                     } label: {
-                        Label(store, systemImage: selectedStoreFilter == store ? "checkmark" : "")
+                        if selectedStoreFilter == store {
+                            Label(store, systemImage: "checkmark")
+                        } else {
+                            Text(store)
+                        }
                     }
                 }
             }

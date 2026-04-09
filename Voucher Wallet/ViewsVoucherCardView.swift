@@ -82,7 +82,7 @@ struct VoucherCardView: View {
             // Date d'expiration
             if let expiration = voucher.expirationDate {
                 HStack {
-                    Image(systemName: "clock")
+                    Image(systemName: "clock.fill")
                         .font(.caption)
                     Text("Expire le \(expiration.frenchLongFormat)")
                         .font(.caption)

@@ -92,8 +92,9 @@ class PDFAnalyzer {
         var pinCode: String?
         var expirationDate: Date?
         var codeImageData: Data?
+        var storeColor: String?  // Couleur de l'enseigne en hex
         
-        init(id: UUID = UUID(), pageNumber: Int, voucherNumber: String, codeType: CodeType, storeName: String? = nil, storeNameConfidence: Double = 0.0, amount: Double? = nil, pinCode: String? = nil, expirationDate: Date? = nil, codeImageData: Data? = nil) {
+        init(id: UUID = UUID(), pageNumber: Int, voucherNumber: String, codeType: CodeType, storeName: String? = nil, storeNameConfidence: Double = 0.0, amount: Double? = nil, pinCode: String? = nil, expirationDate: Date? = nil, codeImageData: Data? = nil, storeColor: String? = nil) {
             self.id = id
             self.pageNumber = pageNumber
             self.voucherNumber = voucherNumber
@@ -104,6 +105,7 @@ class PDFAnalyzer {
             self.pinCode = pinCode
             self.expirationDate = expirationDate
             self.codeImageData = codeImageData
+            self.storeColor = storeColor
         }
     }
     
@@ -117,7 +119,9 @@ class PDFAnalyzer {
         progressHandler: (@MainActor @Sendable (AnalysisProgress) -> Void)? = nil
     ) async throws -> AnalysisResult {
         
-        await progressHandler?(.loading(message: "Chargement du PDF..."))
+        if let handler = progressHandler {
+            await MainActor.run { handler(.loading(message: "Chargement du PDF...")) }
+        }
         
         guard let pdfDocument = PDFDocument(data: data) else {
             throw PDFAnalyzerError.invalidPDF
@@ -128,14 +132,18 @@ class PDFAnalyzer {
         print("📄 Analyse d'un PDF avec \(pdfDocument.pageCount) page(s)")
         
         let totalPages = pdfDocument.pageCount
-        await progressHandler?(.loading(message: "PDF chargé (\(totalPages) page\(totalPages > 1 ? "s" : ""))"))
+        if let handler = progressHandler {
+            await MainActor.run { handler(.loading(message: "PDF chargé (\(totalPages) page\(totalPages > 1 ? "s" : ""))")) }
+        }
         
         // Analyser chaque page séparément
         for pageIndex in 0..<pdfDocument.pageCount {
             guard let page = pdfDocument.page(at: pageIndex) else { continue }
             
             let currentPage = pageIndex + 1
-            await progressHandler?(.analyzingPage(current: currentPage, total: totalPages))
+            if let handler = progressHandler {
+                await MainActor.run { handler(.analyzingPage(current: currentPage, total: totalPages)) }
+            }
             
             print("\n📃 Page \(currentPage)/\(totalPages)")
             
@@ -160,7 +168,9 @@ class PDFAnalyzer {
         
         // Si aucun bon individuel n'a été détecté, créer un résultat global
         if result.detectedVouchers.isEmpty {
-            await progressHandler?(.extractingData(message: "Extraction des informations..."))
+            if let handler = progressHandler {
+                await MainActor.run { handler(.extractingData(message: "Extraction des informations...")) }
+            }
             
             print("⚠️ Aucun bon individuel détecté, création d'un résultat global")
             
@@ -203,7 +213,9 @@ class PDFAnalyzer {
             print("\n🎉 \(result.detectedVouchers.count) bon(s) détecté(s) au total")
         }
         
-        await progressHandler?(.completed)
+        if let handler = progressHandler {
+            await MainActor.run { handler(.completed) }
+        }
         
         return result
     }
@@ -232,7 +244,9 @@ class PDFAnalyzer {
         }
         
         // Détecter les codes-barres et QR codes
-        await progressHandler?(.detectingBarcodes(pageNumber: pageNumber))
+        if let handler = progressHandler {
+            await MainActor.run { handler(.detectingBarcodes(pageNumber: pageNumber)) }
+        }
         let codes = try await detectBarcodes(in: pageImage)
         for code in codes {
             if code.symbology == .qr {
@@ -243,7 +257,9 @@ class PDFAnalyzer {
         }
         
         // Effectuer l'OCR pour extraire le texte
-        await progressHandler?(.performingOCR(pageNumber: pageNumber))
+        if let handler = progressHandler {
+            await MainActor.run { handler(.performingOCR(pageNumber: pageNumber)) }
+        }
         let ocrText = try await performOCR(on: pageImage)
         pageResult.texts.append(contentsOf: ocrText)
         
@@ -281,6 +297,29 @@ class PDFAnalyzer {
         if let number = voucherNumber {
             let storeDetection = detectStoreName(from: allPageText)
             
+            // Déterminer la couleur de l'enseigne si connue
+            var storeColorHex: String? = nil
+            if let storeName = storeDetection.name {
+                // Essayer d'obtenir la couleur apprise
+                storeColorHex = StoreNameLearning.shared.getLearnedColor(for: storeName)
+                
+                // Si pas de couleur apprise, vérifier les presets
+                if storeColorHex == nil {
+                    // Recherche exacte dans les presets
+                    if let presetColor = StorePreset.presets[storeName] {
+                        storeColorHex = presetColor
+                    } else {
+                        // Recherche partielle
+                        for (preset, color) in StorePreset.presets {
+                            if storeName.localizedCaseInsensitiveContains(preset) {
+                                storeColorHex = color
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            
             let voucher = DetectedVoucher(
                 pageNumber: pageNumber,
                 voucherNumber: number,
@@ -290,7 +329,8 @@ class PDFAnalyzer {
                 amount: extractAmounts(from: allPageText).first,
                 pinCode: extractPinCodes(from: allPageText).first,
                 expirationDate: extractDates(from: allPageText).first,
-                codeImageData: codeImageData
+                codeImageData: codeImageData,
+                storeColor: storeColorHex
             )
             pageResult.detectedVoucher = voucher
         }

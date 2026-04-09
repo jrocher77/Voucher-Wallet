@@ -233,12 +233,22 @@ struct FavoriteVouchersWidgetView: View {
             
             HStack(spacing: 8) {
                 ForEach(entry.vouchers.prefix(2), id: \.id) { voucher in
-                    WidgetVoucherCardView(voucher: voucher)
-                        .frame(maxWidth: .infinity)
-                        .containerBackground(for: .widget) {
-                            Color.clear
+                    if let deepLink = voucherDeepLinkURL(for: voucher) {
+                        Link(destination: deepLink) {
+                            WidgetVoucherCardView(voucher: voucher)
+                                .frame(maxWidth: .infinity)
+                                .containerBackground(for: .widget) {
+                                    Color.clear
+                                }
                         }
-                        .widgetURL(URL(string: "voucherwallet://voucher/\(voucher.id.uuidString)"))
+                        .buttonStyle(.plain)
+                    } else {
+                        WidgetVoucherCardView(voucher: voucher)
+                            .frame(maxWidth: .infinity)
+                            .containerBackground(for: .widget) {
+                                Color.clear
+                            }
+                    }
                 }
                 
                 // Si une seule carte, ajouter un espace vide pour équilibrer
@@ -262,9 +272,16 @@ struct FavoriteVouchersWidgetView: View {
                 // Première ligne (2 cartes)
                 HStack(spacing: 8) {
                     ForEach(entry.vouchers.prefix(2), id: \.id) { voucher in
-                        WidgetVoucherCardView(voucher: voucher)
-                            .frame(maxWidth: .infinity)
-                            .widgetURL(URL(string: "voucherwallet://voucher/\(voucher.id.uuidString)"))
+                        if let deepLink = voucherDeepLinkURL(for: voucher) {
+                            Link(destination: deepLink) {
+                                WidgetVoucherCardView(voucher: voucher)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            WidgetVoucherCardView(voucher: voucher)
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                     
                     // Remplir avec espace vide si moins de 2 cartes
@@ -278,9 +295,16 @@ struct FavoriteVouchersWidgetView: View {
                 if entry.vouchers.count > 2 {
                     HStack(spacing: 8) {
                         ForEach(Array(entry.vouchers.dropFirst(2).prefix(2)), id: \.id) { voucher in
-                            WidgetVoucherCardView(voucher: voucher)
-                                .frame(maxWidth: .infinity)
-                                .widgetURL(URL(string: "voucherwallet://voucher/\(voucher.id.uuidString)"))
+                            if let deepLink = voucherDeepLinkURL(for: voucher) {
+                                Link(destination: deepLink) {
+                                    WidgetVoucherCardView(voucher: voucher)
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                WidgetVoucherCardView(voucher: voucher)
+                                    .frame(maxWidth: .infinity)
+                            }
                         }
                         
                         // Remplir avec espace vide si seulement 3 cartes
@@ -309,6 +333,14 @@ struct FavoriteVouchersWidgetView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+    
+    private func voucherDeepLinkURL(for voucher: VoucherSnapshot) -> URL? {
+        var components = URLComponents()
+        components.scheme = "voucherwallet"
+        components.host = "voucher"
+        components.path = "/\(voucher.id.uuidString)"
+        return components.url
     }
 }
 

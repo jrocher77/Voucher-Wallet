@@ -211,6 +211,7 @@ struct AddExpenseView: View {
         do {
             try modelContext.save()
             print("💾 Dépense sauvegardée avec succès")
+            reloadFavoriteWidgetIfNeeded()
             
             // Vérifier si le solde est maintenant à 0
             if voucher.remainingBalance == 0 {
@@ -232,6 +233,7 @@ struct AddExpenseView: View {
         
         do {
             try modelContext.save()
+            reloadFavoriteWidgetIfNeeded()
             dismiss()
         } catch {
             errorMessage = "Erreur lors de la suppression : \(error.localizedDescription)"
@@ -248,12 +250,18 @@ struct AddExpenseView: View {
         do {
             try modelContext.save()
             print("🗑️ Bon supprimé avec succès")
+            reloadFavoriteWidgetIfNeeded()
             dismiss()
         } catch {
             errorMessage = "Erreur lors de la suppression du bon : \(error.localizedDescription)"
             showingError = true
             print("❌ Erreur de suppression du bon: \(error)")
         }
+    }
+    
+    private func reloadFavoriteWidgetIfNeeded() {
+        guard voucher.isFavorite else { return }
+        WidgetReloader.reloadFavoriteVouchersWidget()
     }
 }
 

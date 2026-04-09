@@ -6,8 +6,25 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3F736F852F883B31003FEEE0 /* UtilitiesColorContrastHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F842F883B31003FEEE0 /* UtilitiesColorContrastHelper.swift */; };
+		3F736F872F883B3C003FEEE0 /* UtilitiesVoucherDuplicateDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F862F883B3C003FEEE0 /* UtilitiesVoucherDuplicateDetector.swift */; };
+		3F736F892F883B65003FEEE0 /* ViewModelsVoucherImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F882F883B65003FEEE0 /* ViewModelsVoucherImportViewModel.swift */; };
+		3F736F8B2F883B6E003FEEE0 /* ViewComponentsConfidenceBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F8A2F883B6E003FEEE0 /* ViewComponentsConfidenceBadge.swift */; };
+		3F736F8D2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F8C2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift */; };
+		3F736F8F2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F8E2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift */; };
+		3F736F912F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F736F902F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		3F5725282F7EBE8C00E99806 /* Voucher Wallet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Voucher Wallet.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F736F842F883B31003FEEE0 /* UtilitiesColorContrastHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilitiesColorContrastHelper.swift; sourceTree = "<group>"; };
+		3F736F862F883B3C003FEEE0 /* UtilitiesVoucherDuplicateDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilitiesVoucherDuplicateDetector.swift; sourceTree = "<group>"; };
+		3F736F882F883B65003FEEE0 /* ViewModelsVoucherImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModelsVoucherImportViewModel.swift; sourceTree = "<group>"; };
+		3F736F8A2F883B6E003FEEE0 /* ViewComponentsConfidenceBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsConfidenceBadge.swift; sourceTree = "<group>"; };
+		3F736F8C2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsColorCustomizationSection.swift; sourceTree = "<group>"; };
+		3F736F8E2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsVoucherFormFields.swift; sourceTree = "<group>"; };
+		3F736F902F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewComponentsMultiVoucherList.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +51,13 @@
 			children = (
 				3F57252A2F7EBE8C00E99806 /* Voucher Wallet */,
 				3F5725292F7EBE8C00E99806 /* Products */,
+				3F736F842F883B31003FEEE0 /* UtilitiesColorContrastHelper.swift */,
+				3F736F862F883B3C003FEEE0 /* UtilitiesVoucherDuplicateDetector.swift */,
+				3F736F882F883B65003FEEE0 /* ViewModelsVoucherImportViewModel.swift */,
+				3F736F8A2F883B6E003FEEE0 /* ViewComponentsConfidenceBadge.swift */,
+				3F736F8C2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift */,
+				3F736F8E2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift */,
+				3F736F902F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -119,6 +143,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3F736F892F883B65003FEEE0 /* ViewModelsVoucherImportViewModel.swift in Sources */,
+				3F736F8F2F883B9D003FEEE0 /* ViewComponentsVoucherFormFields.swift in Sources */,
+				3F736F8B2F883B6E003FEEE0 /* ViewComponentsConfidenceBadge.swift in Sources */,
+				3F736F872F883B3C003FEEE0 /* UtilitiesVoucherDuplicateDetector.swift in Sources */,
+				3F736F8D2F883B87003FEEE0 /* ViewComponentsColorCustomizationSection.swift in Sources */,
+				3F736F912F883BBB003FEEE0 /* ViewComponentsMultiVoucherList.swift in Sources */,
+				3F736F852F883B31003FEEE0 /* UtilitiesColorContrastHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

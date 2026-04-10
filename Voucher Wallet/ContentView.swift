@@ -152,11 +152,10 @@ struct ContentView: View {
             } label: {
                 Label("Ajouter un bon", systemImage: "plus")
                     .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding()
-                    .background(Color.accentColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 6)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .padding(.top)
         }
         .padding()

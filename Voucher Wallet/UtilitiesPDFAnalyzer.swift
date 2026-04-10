@@ -569,10 +569,32 @@ class PDFAnalyzer {
         let uppercasedText = text.uppercased()
         let lines = text.components(separatedBy: .newlines)
         
-        // Créer un contexte de détection
-        var context = StoreNameLearning.DetectionContext()
+        // Cas spécial: co-branding Fnac / Darty sur le même document
+        if containsStoreName("Fnac", in: text) && containsStoreName("Darty", in: text) {
+            var cobrandContext = StoreNameLearning.DetectionContext()
+            cobrandContext.hasMatchingURL = uppercasedText.contains("FNACDARTY")
+                || uppercasedText.contains("FNAC-DARTY")
+                || uppercasedText.contains("FNAC/DARTY")
+            cobrandContext.isInFirstLines = lines.prefix(8).contains { line in
+                let upperLine = line.uppercased()
+                return upperLine.contains("FNAC") && upperLine.contains("DARTY")
+            }
+            cobrandContext.isAllUppercase = uppercasedText.contains("FNAC") && uppercasedText.contains("DARTY")
+            
+            let cobrandName = "Fnac / Darty"
+            let confidence = learning.calculateConfidenceScore(
+                for: cobrandName,
+                detectionMethod: .knownStore,
+                context: cobrandContext
+            )
+            
+            print("🏪 Enseigne co-brand détectée: \(cobrandName)")
+            print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+            return (cobrandName, confidence, .knownStore)
+        }
         
         // 1. Recherche dans les enseignes connues (prioritaire)
+        var knownStoreCandidates: [(name: String, confidence: Double)] = []
         for storeName in knownStores {
             if containsStoreName(storeName, in: text) {
                 print("🏪 Enseigne connue trouvée: \(storeName)")
@@ -581,22 +603,42 @@ class PDFAnalyzer {
                 }
                 
                 // Enrichir le contexte
+                var context = StoreNameLearning.DetectionContext()
                 context.hasMatchingURL = uppercasedText.contains(storeName.uppercased().replacingOccurrences(of: " ", with: ""))
                 context.isInFirstLines = lines.prefix(5).contains { $0.uppercased().contains(storeName.uppercased()) }
                 context.isAllUppercase = uppercasedText.contains(storeName.uppercased())
                 
-                let confidence = learning.calculateConfidenceScore(
+                var confidence = learning.calculateConfidenceScore(
                     for: storeName,
                     detectionMethod: .knownStore,
                     context: context
                 )
                 
+                // Bonus si l'enseigne est répétée plusieurs fois (cas documents multi-occurrences)
+                let occurrences = countStoreOccurrences(storeName, in: text)
+                if occurrences > 1 {
+                    confidence += min(Double(occurrences - 1) * 0.03, 0.12)
+                }
+                confidence = min(confidence, 1.0)
+                
                 print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
-                return (storeName, confidence, .knownStore)
+                knownStoreCandidates.append((storeName, confidence))
             }
         }
         
+        if let bestKnownStore = knownStoreCandidates
+            .sorted(by: { lhs, rhs in
+                if lhs.confidence == rhs.confidence {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.confidence > rhs.confidence
+            })
+            .first {
+            return (bestKnownStore.name, bestKnownStore.confidence, .knownStore)
+        }
+        
         // 2. Recherche dans les enseignes apprises
+        var learnedStoreCandidates: [(name: String, confidence: Double)] = []
         let learnedStores = learning.getLearnedStoreNames()
         for storeName in learnedStores {
             if containsStoreName(storeName, in: text) {
@@ -605,19 +647,37 @@ class PDFAnalyzer {
                     print("  🔎 Ligne OCR matchée: \(matchedLine)")
                 }
                 
+                var context = StoreNameLearning.DetectionContext()
                 context.hasMatchingURL = uppercasedText.contains(storeName.uppercased().replacingOccurrences(of: " ", with: ""))
                 context.isInFirstLines = lines.prefix(5).contains { $0.uppercased().contains(storeName.uppercased()) }
                 context.isAllUppercase = uppercasedText.contains(storeName.uppercased())
                 
-                let confidence = learning.calculateConfidenceScore(
+                var confidence = learning.calculateConfidenceScore(
                     for: storeName,
                     detectionMethod: .learnedStore,
                     context: context
                 )
                 
+                let occurrences = countStoreOccurrences(storeName, in: text)
+                if occurrences > 1 {
+                    confidence += min(Double(occurrences - 1) * 0.03, 0.12)
+                }
+                confidence = min(confidence, 1.0)
+                
                 print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
-                return (storeName, confidence, .learnedStore)
+                learnedStoreCandidates.append((storeName, confidence))
             }
+        }
+        
+        if let bestLearnedStore = learnedStoreCandidates
+            .sorted(by: { lhs, rhs in
+                if lhs.confidence == rhs.confidence {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.confidence > rhs.confidence
+            })
+            .first {
+            return (bestLearnedStore.name, bestLearnedStore.confidence, .learnedStore)
         }
         
         // 3. Recherche de variations courantes
@@ -636,6 +696,7 @@ class PDFAnalyzer {
             if uppercasedText.contains(variant) {
                 print("🏪 Enseigne trouvée (variation): \(storeName)")
                 
+                var context = StoreNameLearning.DetectionContext()
                 context.hasMatchingURL = false
                 context.isInFirstLines = true
                 context.isAllUppercase = true
@@ -705,6 +766,19 @@ class PDFAnalyzer {
             .filter { !$0.isEmpty }
         
         return trimmedLines.first { containsStoreName(storeName, in: $0) }
+    }
+    
+    /// Compte le nombre d'occurrences d'une enseigne avec des bornes de mot.
+    private static func countStoreOccurrences(_ storeName: String, in text: String) -> Int {
+        let escapedName = NSRegularExpression.escapedPattern(for: storeName)
+        let pattern = "(?<![\\p{L}\\p{N}])\(escapedName)(?![\\p{L}\\p{N}])"
+        
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return containsStoreName(storeName, in: text) ? 1 : 0
+        }
+        
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.numberOfMatches(in: text, options: [], range: range)
     }
     
     /// Détecte le nom de l'enseigne en utilisant des heuristiques intelligentes

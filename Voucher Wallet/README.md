@@ -9,13 +9,14 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 ### ✨ Gestion des Bons
 - **Ajout manuel** : Créez vos bons avec formulaire complet
 - **Import PDF** : Analysez vos PDF de bons avec OCR (Vision Framework)
+- **Co-branding Fnac/Darty** : Normalisation automatique en `Fnac / Darty` quand les deux enseignes sont détectées
 - **Import multiple** : Détectez et importez plusieurs bons depuis un PDF
 - **Codes-barres** : Génération automatique de QR codes et codes-barres Code128
 - **Cartes colorées** : Chaque enseigne a sa couleur personnalisable
 - **Personnalisation complète** : Couleur de fond ET de texte pour chaque bon
 
 ### 🎨 Personnalisation
-- **Préréglages de couleurs** : 53 enseignes populaires pré-configurées
+- **Préréglages de couleurs** : 54 enseignes populaires pré-configurées
 - **ColorPicker natif** : Choisissez n'importe quelle couleur
 - **Couleur de texte** : Personnalisez la couleur du texte sur vos cartes
 - **Validation de contraste** : Avertissement automatique si les couleurs sont trop similaires
@@ -431,7 +432,7 @@ Les logs suivants sont générés :
 
 ### Fonctionnalités
 - **ColorPickers** : 2 par formulaire
-- **Préréglages** : 53 enseignes + couleurs de texte associées
+- **Préréglages** : 54 enseignes + couleurs de texte associées
 - **Algorithmes** : 3 (luminosité, contraste, suggestion)
 - **Notifications** : 1 (réinitialisation)
 

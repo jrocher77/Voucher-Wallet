@@ -43,17 +43,4 @@ struct VoucherDuplicateDetector {
         return duplicateIds
     }
     
-    /// Filtre une liste de bons pour ne garder que ceux qui ne sont pas en double
-    /// - Parameters:
-    ///   - detectedVouchers: Liste des bons détectés
-    ///   - existingVouchers: Collection de bons existants dans le wallet
-    /// - Returns: Liste des bons non-dupliqués
-    static func filterDuplicates(
-        from detectedVouchers: [PDFAnalyzer.DetectedVoucher],
-        comparing existingVouchers: [Voucher]
-    ) -> [PDFAnalyzer.DetectedVoucher] {
-        detectedVouchers.filter { voucher in
-            !isDuplicate(voucherNumber: voucher.voucherNumber, in: existingVouchers)
-        }
-    }
 }

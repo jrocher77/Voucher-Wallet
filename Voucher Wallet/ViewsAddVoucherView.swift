@@ -26,7 +26,6 @@ struct AddVoucherView: View {
     @State private var showingDocumentPicker = false
     @State private var selectedPDFData: Data?
     @State private var editingVoucher: PDFAnalyzer.DetectedVoucher?
-    @State private var showingVoucherEditor = false
     
     // Champs du formulaire (pour un seul bon ou saisie manuelle)
     @State private var storeName = ""
@@ -84,16 +83,13 @@ struct AddVoucherView: View {
             ) { result in
                 handleFileImport(result)
             }
-            .sheet(isPresented: $showingVoucherEditor) {
-                if let voucher = editingVoucher {
-                    VoucherEditorView(
-                        voucher: voucher,
-                        onSave: { updatedVoucher in
-                            updateVoucher(updatedVoucher)
-                            showingVoucherEditor = false
-                        }
-                    )
-                }
+            .sheet(item: $editingVoucher) { voucher in
+                VoucherEditorView(
+                    voucher: voucher,
+                    onSave: { updatedVoucher in
+                        updateVoucher(updatedVoucher)
+                    }
+                )
             }
             .alert("Erreur", isPresented: $viewModel.showingError) {
                 Button("OK", role: .cancel) { }
@@ -245,7 +241,6 @@ struct AddVoucherView: View {
                 onToggle: { id in viewModel.toggleSelection(id) },
                 onEdit: { voucher in
                     editingVoucher = voucher
-                    showingVoucherEditor = true
                 }
             )
             

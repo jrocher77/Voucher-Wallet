@@ -9,8 +9,7 @@ import SwiftUI
 
 // MARK: - Color Presets
 
-struct ColorPreset: Identifiable {
-    let id = UUID()
+struct ColorPreset {
     let name: String
     let hex: String
 }

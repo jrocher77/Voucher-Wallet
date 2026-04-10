@@ -721,7 +721,6 @@ class PDFAnalyzer {
             
             var context = StoreNameLearning.DetectionContext()
             context.isInFirstLines = true
-            context.lineNumber = index
             
             // Pattern 1: Ligne entièrement en majuscules (probable nom d'enseigne)
             if trimmedLine == trimmedLine.uppercased() && 

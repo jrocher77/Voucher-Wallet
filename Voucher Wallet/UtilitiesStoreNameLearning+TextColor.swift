@@ -96,15 +96,4 @@ extension StoreNameLearning {
         return contrastRatio >= 3.0
     }
     
-    /// Réinitialise toutes les couleurs de texte apprises
-    func resetLearnedTextColors() {
-        UserDefaults.standard.removeObject(forKey: Self.textColorKey)
-        print("🧹 Couleurs de texte réinitialisées")
-    }
-    
-    /// Récupère toutes les couleurs de texte apprises
-    /// - Returns: Dictionnaire [enseigne: couleurHex]
-    func getAllLearnedTextColors() -> [String: String] {
-        return UserDefaults.standard.dictionary(forKey: Self.textColorKey) as? [String: String] ?? [:]
-    }
 }

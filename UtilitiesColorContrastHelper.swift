@@ -68,29 +68,4 @@ struct ColorContrastHelper {
         return (r, g, b)
     }
     
-    /// Calcule le ratio de contraste entre deux couleurs
-    /// - Parameters:
-    ///   - color1: Première couleur
-    ///   - color2: Deuxième couleur
-    /// - Returns: Ratio de contraste (1:1 à 21:1)
-    static func contrastRatio(between color1: Color, and color2: Color) -> Double {
-        let luminance1 = calculateLuminance(hex: color1.toHex())
-        let luminance2 = calculateLuminance(hex: color2.toHex())
-        
-        let lighter = max(luminance1, luminance2)
-        let darker = min(luminance1, luminance2)
-        
-        return (lighter + 0.05) / (darker + 0.05)
-    }
-    
-    /// Suggère automatiquement une couleur de texte (noir ou blanc) en fonction de la couleur de fond
-    /// - Parameter backgroundColor: Couleur de fond
-    /// - Returns: Couleur de texte recommandée (noir ou blanc)
-    static func suggestTextColor(for backgroundColor: Color) -> Color {
-        let luminance = calculateLuminance(hex: backgroundColor.toHex())
-        
-        // Si le fond est clair (luminance élevée), utiliser du texte noir
-        // Sinon, utiliser du texte blanc
-        return luminance > 0.5 ? .black : .white
-    }
 }

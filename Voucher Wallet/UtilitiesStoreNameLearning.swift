@@ -181,7 +181,6 @@ class StoreNameLearning {
         var hasMatchingURL: Bool = false
         var isInFirstLines: Bool = false
         var isAllUppercase: Bool = false
-        var lineNumber: Int = 0
     }
     
     // MARK: - Statistiques
@@ -283,23 +282,6 @@ class StoreNameLearning {
     /// Sauvegarde les apprentissages de couleurs
     private func saveStoreColors(_ colors: [String: [String: Int]]) {
         UserDefaults.standard.set(colors, forKey: storeColorsKey)
-    }
-    
-    /// Obtient la couleur recommandée pour une enseigne
-    /// Combine la couleur apprise et la couleur prédéfinie
-    /// - Parameter storeName: Nom de l'enseigne
-    /// - Returns: Code hexadécimal de la couleur recommandée
-    func getRecommendedColor(for storeName: String) -> String {
-        // 1. D'abord, vérifier si l'utilisateur a une préférence apprise
-        if let learnedColor = getLearnedColor(for: storeName) {
-            return learnedColor
-        }
-        
-        // 2. Sinon, utiliser la couleur prédéfinie (si disponible)
-        // Cette ligne utilise StorePreset qui doit être importé
-        // Si ce n'est pas possible ici, on retourne une couleur par défaut
-        // et on laisse l'appelant gérer StorePreset
-        return "#007AFF" // Couleur par défaut bleu iOS
     }
     
     // MARK: - Synchronisation avec les Réglages iOS

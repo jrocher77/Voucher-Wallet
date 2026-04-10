@@ -52,6 +52,7 @@ struct FavoriteVouchersWidget: Widget {
             FavoriteVouchersWidgetView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
+        .contentMarginsDisabled()
         .configurationDisplayName("Cartes Favorites")
         .description("Affiche vos cartes de fidélité et bons d'achat favoris.")
         .supportedFamilies([.systemMedium, .systemLarge])
@@ -82,7 +83,10 @@ struct VoucherSnapshot: Identifiable {
     
     var daysUntilExpiration: Int? {
         guard let expirationDate else { return nil }
-        return Calendar.current.dateComponents([.day], from: Date(), to: expirationDate).day
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let expirationDay = calendar.startOfDay(for: expirationDate)
+        return calendar.dateComponents([.day], from: today, to: expirationDay).day
     }
 }
 
@@ -191,6 +195,7 @@ struct FavoriteVouchersProvider: TimelineProvider {
 struct FavoriteVouchersWidgetView: View {
     @Environment(\.widgetFamily) var widgetFamily
     let entry: FavoriteVouchersEntry
+    private let compactCardsRowHeight: CGFloat = 132
     
     var body: some View {
         if entry.vouchers.isEmpty {
@@ -267,9 +272,8 @@ struct FavoriteVouchersWidgetView: View {
     private var largeWidgetView: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerView
-            
-            VStack(spacing: 8) {
-                // Première ligne (2 cartes)
+
+            if entry.vouchers.count <= 2 {
                 HStack(spacing: 8) {
                     ForEach(entry.vouchers.prefix(2), id: \.id) { voucher in
                         if let deepLink = voucherDeepLinkURL(for: voucher) {
@@ -283,16 +287,37 @@ struct FavoriteVouchersWidgetView: View {
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    
-                    // Remplir avec espace vide si moins de 2 cartes
+
                     if entry.vouchers.count == 1 {
                         Color.clear.frame(maxWidth: .infinity)
                     }
                 }
-                .frame(maxHeight: .infinity)
-                
-                // Deuxième ligne (2 cartes supplémentaires)
-                if entry.vouchers.count > 2 {
+                .frame(height: compactCardsRowHeight)
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
+                .padding(.bottom, 12)
+
+                Spacer(minLength: 0)
+            } else {
+                VStack(spacing: 8) {
+                    // Première ligne (2 cartes)
+                    HStack(spacing: 8) {
+                        ForEach(entry.vouchers.prefix(2), id: \.id) { voucher in
+                            if let deepLink = voucherDeepLinkURL(for: voucher) {
+                                Link(destination: deepLink) {
+                                    WidgetVoucherCardView(voucher: voucher)
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                WidgetVoucherCardView(voucher: voucher)
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: .infinity)
+
+                    // Deuxième ligne (2 cartes supplémentaires)
                     HStack(spacing: 8) {
                         ForEach(Array(entry.vouchers.dropFirst(2).prefix(2)), id: \.id) { voucher in
                             if let deepLink = voucherDeepLinkURL(for: voucher) {
@@ -306,7 +331,7 @@ struct FavoriteVouchersWidgetView: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
-                        
+
                         // Remplir avec espace vide si seulement 3 cartes
                         if entry.vouchers.count == 3 {
                             Color.clear.frame(maxWidth: .infinity)
@@ -314,10 +339,10 @@ struct FavoriteVouchersWidgetView: View {
                     }
                     .frame(maxHeight: .infinity)
                 }
+                .frame(maxHeight: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
             }
-            .frame(maxHeight: .infinity)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
         }
     }
     
@@ -326,13 +351,14 @@ struct FavoriteVouchersWidgetView: View {
         HStack {
             Image(systemName: "star.fill")
                 .foregroundStyle(.yellow)
-            Text("Mes Favoris")
+            Text("Mes bons favoris")
                 .font(.headline)
                 .foregroundStyle(.primary)
             Spacer()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
     }
     
     private func voucherDeepLinkURL(for voucher: VoucherSnapshot) -> URL? {
@@ -354,11 +380,11 @@ struct WidgetVoucherCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 // Nom de l'enseigne
                 Text(voucher.storeName)
-                    .font(.system(.subheadline, design: .rounded))
+                    .font(.system(.body, design: .rounded))
                     .fontWeight(.semibold)
                     .foregroundStyle(Color(hex: voucher.textColor))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.75)
                 
                 Spacer(minLength: 0)
                 

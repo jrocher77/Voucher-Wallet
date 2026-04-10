@@ -531,17 +531,25 @@ struct DetailRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 
-                if isSecret && !isRevealed {
-                    HStack {
-                        Text("••••")
+                if isSecret {
+                    HStack(spacing: 8) {
+                        Text(isRevealed ? value : "••••")
                             .font(.body)
                             .fontWeight(.medium)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 0)
                         Button {
-                            isRevealed = true
+                            var transaction = Transaction()
+                            transaction.animation = nil
+                            withTransaction(transaction) {
+                                isRevealed.toggle()
+                            }
                         } label: {
-                            Image(systemName: "eye")
+                            Image(systemName: isRevealed ? "eye.slash" : "eye")
                                 .font(.caption)
+                                .frame(width: 18)
                         }
+                        .buttonStyle(.plain)
                     }
                 } else {
                     Text(value)

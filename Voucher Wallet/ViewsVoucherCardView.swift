@@ -65,20 +65,6 @@ struct VoucherCardView: View {
                     .foregroundStyle(textColor)
             }
             
-            // Code PIN si disponible
-            if let pin = voucher.pinCode {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Code PIN")
-                        .font(.caption)
-                        .foregroundStyle(textColor.opacity(0.8))
-                    Text(pin)
-                        .font(.system(.body, design: .monospaced))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .foregroundStyle(textColor)
-                }
-            }
-            
             // Date d'expiration
             if let expiration = voucher.expirationDate {
                 HStack {

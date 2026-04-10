@@ -369,6 +369,9 @@ struct EditVoucherView: View {
         // Sauvegarder
         do {
             try modelContext.save()
+            if voucher.isFavorite {
+                WidgetReloader.reloadFavoriteVouchersWidget()
+            }
             dismiss()
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"

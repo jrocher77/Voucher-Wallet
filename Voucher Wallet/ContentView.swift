@@ -9,7 +9,6 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(URLHandler.self) var urlHandler
     @Query(sort: \Voucher.dateAdded, order: .reverse) private var vouchers: [Voucher]
     

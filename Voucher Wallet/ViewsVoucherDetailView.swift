@@ -60,13 +60,11 @@ struct VoucherDetailView: View {
     }
     
     private var contentView: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Carte miniature en haut
-                VoucherCardView(voucher: voucher)
-                    .frame(height: 180)
-                    .padding(.horizontal)
-                
+        VStack(spacing: 0) {
+            headerCardSection
+            
+            ScrollView {
+                VStack(spacing: 24) {
                 if isExpired {
                     expiredBanner
                 }
@@ -106,7 +104,8 @@ struct VoucherDetailView: View {
                 
                 Spacer(minLength: 40)
             }
-            .padding(.vertical)
+            .padding(.bottom)
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -204,6 +203,34 @@ struct VoucherDetailView: View {
         }
     }
     
+    private var headerCardSection: some View {
+        ZStack(alignment: .topLeading) {
+            VoucherCardView(voucher: voucher, showsFavoriteIcon: false)
+                .frame(height: 200)
+            
+            Button(action: toggleFavorite) {
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.001)
+                        .frame(width: 56, height: 56)
+                    
+                    Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+                        .font(.title2)
+                        .foregroundStyle(voucher.isFavorite ? .yellow : Color(hex: voucher.textColor).opacity(0.9))
+                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                        .symbolEffect(.bounce, value: voucher.isFavorite)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .padding(.top, 12)
+            .zIndex(1)
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+    }
+    
     private var expiredBanner: some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -236,15 +263,19 @@ struct VoucherDetailView: View {
                         Button(action: {
                             toggleBrightness()
                         }) {
-                            Image(uiImage: codeImage)
-                                .resizable()
-                                .interpolation(.none)
-                                .aspectRatio(contentMode: .fit)
-                                .padding(40)
+                            VStack {
+                                Spacer(minLength: 0)
+                                Image(uiImage: codeImage)
+                                    .resizable()
+                                    .interpolation(.none)
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 180, height: 180)
+                                Spacer(minLength: 0)
+                            }
                         }
                         .buttonStyle(.plain)
                     } else {
-                        // Code-barres : étire horizontalement
+                        // Code-barres : même zone d'affichage que le QR pour garder un layout identique
                         Button(action: {
                             toggleBrightness()
                         }) {
@@ -271,7 +302,7 @@ struct VoucherDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: voucher.codeType == .qrCode ? 350 : 220)
+            .frame(height: 220)
             .padding(.horizontal)
         }
     }
@@ -454,7 +485,14 @@ struct VoucherDetailView: View {
     }
     
     private func toggleFavorite() {
-        guard let manager = favoritesManager else { return }
+        let manager: FavoritesManager
+        if let existingManager = favoritesManager {
+            manager = existingManager
+        } else {
+            let newManager = FavoritesManager(modelContext: modelContext)
+            favoritesManager = newManager
+            manager = newManager
+        }
         
         // Feedback haptique immédiat
         let generator = UIImpactFeedbackGenerator(style: .light)

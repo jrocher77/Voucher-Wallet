@@ -9,6 +9,7 @@ import SwiftUI
 
 struct VoucherCardView: View {
     let voucher: Voucher
+    var showsFavoriteIcon: Bool = true
     
     // Couleur du texte à utiliser
     private var textColor: Color {
@@ -19,11 +20,8 @@ struct VoucherCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // En-tête avec nom de l'enseigne
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                // Espace pour l'étoile favori
-                if voucher.isFavorite {
-                    Spacer()
-                        .frame(width: 28)
-                }
+                Spacer()
+                    .frame(width: 28)
                 
                 Text(voucher.storeName)
                     .font(.title2)
@@ -84,12 +82,8 @@ struct VoucherCardView: View {
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
         )
         .overlay(alignment: .topLeading) {
-            // Badge favori
-            if voucher.isFavorite {
-                Image(systemName: "star.fill")
-                    .font(.title2)
-                    .foregroundStyle(.yellow)
-                    .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+            if showsFavoriteIcon {
+                favoriteIcon
                     .padding(.leading, 12)
                     .padding(.top, 12)
                     .transition(.scale.combined(with: .opacity))
@@ -97,6 +91,15 @@ struct VoucherCardView: View {
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: voucher.isFavorite)
     }
+    
+    private var favoriteIcon: some View {
+        Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+            .font(.title2)
+            .foregroundStyle(voucher.isFavorite ? .yellow : textColor.opacity(0.9))
+            .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+            .symbolEffect(.bounce, value: voucher.isFavorite)
+    }
+    
 }
 
 #Preview {

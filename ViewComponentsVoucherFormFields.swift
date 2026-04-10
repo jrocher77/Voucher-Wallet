@@ -20,14 +20,15 @@ struct VoucherFormFields: View {
     
     let analysisResult: PDFAnalyzer.AnalysisResult?
     let existingVouchers: [Voucher]
+    let detectedStoreConfidence: Double?
     
     var body: some View {
         Group {
             // Score de confiance si disponible
-            if let result = analysisResult,
-               let detectedName = result.detectedStoreName,
-               result.storeNameConfidence > 0 {
-                confidenceSection(result: result, detectedName: detectedName)
+            if let confidence = confidenceToDisplay,
+               confidence > 0,
+               let detectedName = detectedStoreNameToDisplay {
+                confidenceSection(confidence: confidence, detectedName: detectedName)
             }
             
             // Informations du bon
@@ -43,7 +44,7 @@ struct VoucherFormFields: View {
     
     // MARK: - Sections
     
-    private func confidenceSection(result: PDFAnalyzer.AnalysisResult, detectedName: String) -> some View {
+    private func confidenceSection(confidence: Double, detectedName: String) -> some View {
         Section {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -55,13 +56,13 @@ struct VoucherFormFields: View {
                         Text(detectedName)
                             .font(.headline)
                         
-                        ConfidenceBadge(confidence: result.storeNameConfidence)
+                        ConfidenceBadge(confidence: confidence)
                     }
                 }
                 
                 Spacer()
                 
-                if result.storeNameConfidence < 0.7 {
+                if confidence < 0.7 {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                         .font(.title3)
@@ -69,7 +70,7 @@ struct VoucherFormFields: View {
             }
             .padding(.vertical, 4)
             
-            if result.storeNameConfidence < 0.7 {
+            if confidence < 0.7 {
                 Text("La détection automatique n'est pas très sûre. Vérifiez le nom de l'enseigne.")
                     .font(.caption)
                     .foregroundColor(.orange)
@@ -142,6 +143,7 @@ struct VoucherFormFields: View {
                     ),
                     displayedComponents: .date
                 )
+                .tint(.blue)
             }
         }
     }
@@ -150,6 +152,20 @@ struct VoucherFormFields: View {
     
     private var isDuplicate: Bool {
         VoucherDuplicateDetector.isDuplicate(voucherNumber: voucherNumber, in: existingVouchers)
+    }
+    
+    private var confidenceToDisplay: Double? {
+        if let detectedStoreConfidence {
+            return detectedStoreConfidence
+        }
+        return analysisResult?.storeNameConfidence
+    }
+    
+    private var detectedStoreNameToDisplay: String? {
+        if let detectedName = analysisResult?.detectedStoreName, !detectedName.isEmpty {
+            return detectedName
+        }
+        return storeName.isEmpty ? nil : storeName
     }
 }
 
@@ -173,7 +189,8 @@ struct VoucherFormFields: View {
                 expirationDate: $expirationDate,
                 hasExpirationDate: $hasExpirationDate,
                 analysisResult: nil,
-                existingVouchers: []
+                existingVouchers: [],
+                detectedStoreConfidence: nil
             )
         }
     }

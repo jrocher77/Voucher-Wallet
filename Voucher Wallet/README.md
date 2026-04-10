@@ -15,7 +15,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 - **Personnalisation complète** : Couleur de fond ET de texte pour chaque bon
 
 ### 🎨 Personnalisation
-- **Préréglages de couleurs** : 15 enseignes populaires pré-configurées
+- **Préréglages de couleurs** : 53 enseignes populaires pré-configurées
 - **ColorPicker natif** : Choisissez n'importe quelle couleur
 - **Couleur de texte** : Personnalisez la couleur du texte sur vos cartes
 - **Validation de contraste** : Avertissement automatique si les couleurs sont trop similaires
@@ -219,7 +219,6 @@ Voucher Wallet/
 │   │   └── ExpenseListView.swift
 │   │
 │   └── Stats & Demo
-│       ├── LearningStatsView.swift
 │       ├── TextColorExampleView.swift
 │       └── AppIconShowcase.swift
 │
@@ -432,7 +431,7 @@ Les logs suivants sont générés :
 
 ### Fonctionnalités
 - **ColorPickers** : 2 par formulaire
-- **Préréglages** : 15 enseignes + 4 couleurs texte
+- **Préréglages** : 53 enseignes + couleurs de texte associées
 - **Algorithmes** : 3 (luminosité, contraste, suggestion)
 - **Notifications** : 1 (réinitialisation)
 

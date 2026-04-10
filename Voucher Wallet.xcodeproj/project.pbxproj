@@ -82,7 +82,6 @@
 		3F7370862F884DF1003FEEE0 /* Exceptions for "Voucher Wallet" folder in "Voucher Wallet" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				ExtensionsVoucherExtensions.swift,
 				TestsFavoriteVouchersWidgetTests.swift,
 			);
 			target = 3F5725272F7EBE8C00E99806 /* Voucher Wallet */;

@@ -87,6 +87,7 @@ struct EditVoucherView: View {
                             ),
                             displayedComponents: .date
                         )
+                        .tint(.blue)
                         .environment(\.locale, Locale(identifier: "fr_FR"))
                     }
                 }
@@ -281,8 +282,13 @@ struct EditVoucherView: View {
             return false
         }
         
-        // 🎨 INTERDICTION : empêcher l'enregistrement si les couleurs sont trop similaires
-        guard !areColorsTooSimilar(selectedColor, selectedTextColor) else {
+        // Autoriser les anciennes combinaisons déjà enregistrées, même si elles ont un contraste faible.
+        // En revanche, interdire toute nouvelle combinaison de couleurs trop similaire.
+        let hasLowContrastColors = areColorsTooSimilar(selectedColor, selectedTextColor)
+        let areOriginalColorsUnchanged = selectedColor.isSimilar(to: Color(hex: voucher.storeColor))
+            && selectedTextColor.isSimilar(to: Color(hex: voucher.textColor))
+        
+        guard !hasLowContrastColors || areOriginalColorsUnchanged else {
             return false
         }
         

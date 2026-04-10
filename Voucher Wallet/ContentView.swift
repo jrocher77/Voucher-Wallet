@@ -30,7 +30,10 @@ struct ContentView: View {
         if !showExpiredVouchers {
             result = result.filter { voucher in
                 guard let expiration = voucher.expirationDate else { return true }
-                return expiration >= Date()
+                let calendar = Calendar.current
+                let today = calendar.startOfDay(for: Date())
+                let expirationDay = calendar.startOfDay(for: expiration)
+                return expirationDay >= today
             }
         }
         

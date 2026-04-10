@@ -30,6 +30,20 @@ struct VoucherSnapshotTests {
         
         #expect(!snapshot.isExpired, "Le voucher ne devrait pas être expiré")
     }
+
+    @Test("Un voucher qui expire aujourd'hui n'est pas encore expiré")
+    func testVoucherExpiringToday() async throws {
+        let snapshot = VoucherSnapshot(
+            id: UUID(),
+            storeName: "Test Store",
+            remainingBalance: 50.0,
+            storeColor: "#007AFF",
+            textColor: "#FFFFFF",
+            expirationDate: Date()
+        )
+
+        #expect(!snapshot.isExpired, "Le voucher expirant aujourd'hui ne devrait pas être expiré")
+    }
     
     @Test("Un voucher expiré est correctement identifié")
     func testExpiredVoucher() async throws {

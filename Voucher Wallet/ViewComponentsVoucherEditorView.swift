@@ -84,6 +84,7 @@ struct VoucherEditorView: View {
                             ),
                             displayedComponents: .date
                         )
+                        .tint(.blue)
                         .environment(\.locale, Locale(identifier: "fr_FR"))
                     }
                 }

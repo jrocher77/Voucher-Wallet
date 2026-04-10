@@ -166,8 +166,13 @@ class VoucherImportViewModel {
             globalCardColor = Color(hex: StorePreset.getColor(for: storeName))
         }
         
-        // Suggérer automatiquement la couleur de texte
-        let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: globalCardColor.toHex())
+        // Suggérer automatiquement la couleur de texte (avec exceptions par enseigne)
+        let suggestedTextColor: String
+        if let storeName = firstVoucher.storeName {
+            suggestedTextColor = StorePreset.getTextColor(for: storeName, backgroundHex: globalCardColor.toHex())
+        } else {
+            suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: globalCardColor.toHex())
+        }
         globalTextColor = Color(hex: suggestedTextColor)
         
         print("🎨 Couleurs initialisées: fond=\(globalCardColor.toHex()), texte=\(globalTextColor.toHex())")

@@ -38,6 +38,7 @@ struct AddVoucherView: View {
     @State private var hasExpirationDate = false
     @State private var selectedColor = Color(hex: "#007AFF")
     @State private var selectedTextColor = Color(hex: "#FFFFFF")
+    @State private var detectedStoreConfidence: Double?
     
     enum AddMethod {
         case scan
@@ -219,7 +220,8 @@ struct AddVoucherView: View {
                 expirationDate: $expirationDate,
                 hasExpirationDate: $hasExpirationDate,
                 analysisResult: viewModel.analysisResult,
-                existingVouchers: existingVouchers
+                existingVouchers: existingVouchers,
+                detectedStoreConfidence: detectedStoreConfidence
             )
             
             Section("Couleur de la carte") {
@@ -278,6 +280,7 @@ struct AddVoucherView: View {
         amount = ""
         voucherNumber = ""
         pinCode = ""
+        detectedStoreConfidence = nil
         showingDocumentPicker = true
     }
     
@@ -319,6 +322,7 @@ struct AddVoucherView: View {
         
         // Initialiser les couleurs pour l'import multiple
         if viewModel.hasMultipleVouchers {
+            detectedStoreConfidence = nil
             viewModel.initializeGlobalColors()
             viewModel.selectAll()
         } else if let singleVoucher = result.detectedVouchers.first {
@@ -332,6 +336,7 @@ struct AddVoucherView: View {
     
     private func populateFormWithSingleVoucher(_ voucher: PDFAnalyzer.DetectedVoucher, result: PDFAnalyzer.AnalysisResult) {
         storeName = voucher.storeName ?? ""
+        detectedStoreConfidence = voucher.storeNameConfidence > 0 ? voucher.storeNameConfidence : result.storeNameConfidence
         voucherNumber = voucher.voucherNumber
         pinCode = voucher.pinCode ?? ""
         codeType = voucher.codeType
@@ -352,8 +357,8 @@ struct AddVoucherView: View {
             selectedColor = Color(hex: StorePreset.getColor(for: storeName))
         }
         
-        // Suggérer la couleur de texte
-        let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: selectedColor.toHex())
+        // Suggérer la couleur de texte (avec exceptions par enseigne)
+        let suggestedTextColor = StorePreset.getTextColor(for: storeName, backgroundHex: selectedColor.toHex())
         selectedTextColor = Color(hex: suggestedTextColor)
         
         print("✅ Bon pré-rempli: \(storeName) - Confiance: \(Int(voucher.storeNameConfidence * 100))%")
@@ -364,6 +369,7 @@ struct AddVoucherView: View {
             storeName = detectedStore
             selectedColor = Color(hex: StorePreset.getColor(for: detectedStore))
         }
+        detectedStoreConfidence = result.storeNameConfidence > 0 ? result.storeNameConfidence : nil
         
         if let firstNumber = result.possibleVoucherNumbers.first {
             voucherNumber = firstNumber
@@ -389,8 +395,8 @@ struct AddVoucherView: View {
             codeType = .barcode
         }
         
-        // Suggérer la couleur de texte
-        let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: selectedColor.toHex())
+        // Suggérer la couleur de texte (avec exceptions par enseigne)
+        let suggestedTextColor = StorePreset.getTextColor(for: storeName, backgroundHex: selectedColor.toHex())
         selectedTextColor = Color(hex: suggestedTextColor)
     }
     

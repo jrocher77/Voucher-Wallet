@@ -41,7 +41,10 @@ struct VoucherDetailView: View {
     
     var isExpired: Bool {
         guard let expiration = voucher.expirationDate else { return false }
-        return expiration < Date()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let expirationDay = calendar.startOfDay(for: expiration)
+        return expirationDay < today
     }
     
     var body: some View {
@@ -405,10 +408,6 @@ struct VoucherDetailView: View {
         return BarcodeGenerator.generateCode(for: voucher)
     }
     
-    private func shareVoucher() {
-        // Obsolète - remplacé par le ShareSheet
-    }
-    
     private func createShareItems() -> [Any] {
         var items: [Any] = []
         
@@ -622,8 +621,17 @@ struct ExpenseRow: View {
     }
     
     private func deleteExpense() {
+        let shouldReloadFavoriteWidget = expense.voucher?.isFavorite ?? false
         modelContext.delete(expense)
-        try? modelContext.save()
+        
+        do {
+            try modelContext.save()
+            if shouldReloadFavoriteWidget {
+                WidgetReloader.reloadFavoriteVouchersWidget()
+            }
+        } catch {
+            print("❌ Erreur lors de la suppression de la dépense: \(error)")
+        }
     }
 }
 
@@ -658,4 +666,3 @@ struct ShareSheetView: UIViewControllerRepresentable {
         ))
     }
 }
-

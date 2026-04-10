@@ -54,15 +54,6 @@ final class FavoritesManager {
         }
     }
     
-    /// Vérifie si on peut ajouter un nouveau favori
-    func canAddFavorite() -> Bool {
-        return getFavoriteVouchers().count < Self.maxFavorites
-    }
-    
-    /// Compte le nombre de favoris actuels
-    var favoriteCount: Int {
-        getFavoriteVouchers().count
-    }
 }
 
 enum FavoriteToggleResult {

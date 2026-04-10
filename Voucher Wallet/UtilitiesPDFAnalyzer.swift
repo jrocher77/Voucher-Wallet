@@ -563,14 +563,8 @@ class PDFAnalyzer {
     private static func detectStoreName(from text: String) -> (name: String?, confidence: Double, method: StoreNameLearning.DetectionMethod?) {
         let learning = StoreNameLearning.shared
         
-        // Liste des enseignes connues (pour une détection prioritaire)
-        let knownStores = [
-            "Carrefour", "Decathlon", "Fnac", "Amazon", "Ikea",
-            "Auchan", "Leclerc", "Boulanger", "Darty", "Intersport",
-            "H&M", "Zara", "Sephora", "Galeries Lafayette", "Printemps",
-            "King Jouet", "La Grande Récré", "Cultura", "Leroy Merlin",
-            "Castorama", "Bricorama", "BUT", "Conforama", "Maisons du Monde"
-        ]
+        // Liste des enseignes connues (source unique: StorePreset)
+        let knownStores = Array(StorePreset.presets.keys)
         
         let uppercasedText = text.uppercased()
         let lines = text.components(separatedBy: .newlines)
@@ -580,8 +574,11 @@ class PDFAnalyzer {
         
         // 1. Recherche dans les enseignes connues (prioritaire)
         for storeName in knownStores {
-            if uppercasedText.contains(storeName.uppercased()) {
+            if containsStoreName(storeName, in: text) {
                 print("🏪 Enseigne connue trouvée: \(storeName)")
+                if let matchedLine = firstMatchingLine(for: storeName, in: text) {
+                    print("  🔎 Ligne OCR matchée: \(matchedLine)")
+                }
                 
                 // Enrichir le contexte
                 context.hasMatchingURL = uppercasedText.contains(storeName.uppercased().replacingOccurrences(of: " ", with: ""))
@@ -602,8 +599,11 @@ class PDFAnalyzer {
         // 2. Recherche dans les enseignes apprises
         let learnedStores = learning.getLearnedStoreNames()
         for storeName in learnedStores {
-            if uppercasedText.contains(storeName.uppercased()) {
+            if containsStoreName(storeName, in: text) {
                 print("🏪 Enseigne apprise trouvée: \(storeName)")
+                if let matchedLine = firstMatchingLine(for: storeName, in: text) {
+                    print("  🔎 Ligne OCR matchée: \(matchedLine)")
+                }
                 
                 context.hasMatchingURL = uppercasedText.contains(storeName.uppercased().replacingOccurrences(of: " ", with: ""))
                 context.isInFirstLines = lines.prefix(5).contains { $0.uppercased().contains(storeName.uppercased()) }
@@ -625,7 +625,11 @@ class PDFAnalyzer {
             "E.LECLERC": "Leclerc",
             "E LECLERC": "Leclerc",
             "KING-JOUET": "King Jouet",
-            "KING JOUET": "King Jouet"
+            "KING JOUET": "King Jouet",
+            "LA GRANDE RECRE": "La Grande Recre",
+            "LA GRANDE RÉCRÉ": "La Grande Recre",
+            "NATURE & DECOUVERTES": "Nature et Decouvertes",
+            "NATURE & DÉCOUVERTES": "Nature et Decouvertes"
         ]
         
         for (variant, storeName) in variations {
@@ -677,6 +681,30 @@ class PDFAnalyzer {
         
         print("❌ Aucune enseigne détectée")
         return (nil, 0.0, nil)
+    }
+    
+    /// Vérifie la présence d'une enseigne avec des bornes de mot pour éviter les faux positifs
+    /// (ex: "Action" détecté dans "transaction").
+    private static func containsStoreName(_ storeName: String, in text: String) -> Bool {
+        let escapedName = NSRegularExpression.escapedPattern(for: storeName)
+        let pattern = "(?<![\\p{L}\\p{N}])\(escapedName)(?![\\p{L}\\p{N}])"
+        
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return text.localizedCaseInsensitiveContains(storeName)
+        }
+        
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.firstMatch(in: text, options: [], range: range) != nil
+    }
+    
+    /// Retourne la première ligne OCR qui correspond à l'enseigne détectée
+    private static func firstMatchingLine(for storeName: String, in text: String) -> String? {
+        let trimmedLines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        
+        return trimmedLines.first { containsStoreName(storeName, in: $0) }
     }
     
     /// Détecte le nom de l'enseigne en utilisant des heuristiques intelligentes

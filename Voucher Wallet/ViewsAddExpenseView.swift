@@ -59,57 +59,57 @@ struct AddExpenseView: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack {
-                        Text("Solde restant")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
+                    LabeledContent("Solde restant") {
                         Text(voucher.remainingBalance.formattedEuro)
-                            .font(.subheadline)
                             .fontWeight(.semibold)
                             .foregroundColor(voucher.remainingBalance > 0 ? .primary : .red)
                     }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     
                     if let initial = voucher.amount {
-                        HStack {
-                            Text("Montant initial")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
+                        LabeledContent("Montant initial") {
                             Text(initial.formattedEuro)
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                 } header: {
                     Text("Solde")
                 }
                 
                 Section {
-                    HStack(spacing: 12) {
-                        Text("€")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        TextField("0,00", text: $amount)
-                            .font(.subheadline)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
+                    LabeledContent("Montant") {
+                        HStack(spacing: 6) {
+                            Text("€")
+                                .foregroundStyle(.secondary)
+                            TextField("0,00", text: $amount)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                                .frame(minWidth: 90)
+                        }
                     }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    
+                    if !amount.isEmpty && parsedAmount == nil {
+                        Label("Saisissez un montant valide (ex: 12,50)", systemImage: "exclamationmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else if let parsedAmount, parsedAmount > adjustedBalance {
+                        Label("Le montant dépasse le solde disponible", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                     
                     DatePicker("Date", selection: $date, displayedComponents: [.date])
+                        .tint(.blue)
                         .environment(\.locale, Locale(identifier: "fr_FR"))
-                        .environment(\.dynamicTypeSize, .small)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     
                     TextField("Note (optionnel)", text: $note, axis: .vertical)
-                        .font(.subheadline)
                         .lineLimit(2...4)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .textInputAutocapitalization(.sentences)
                 } header: {
                     Text("Dépense")
+                } footer: {
+                    Text("Le montant est déduit immédiatement du solde du bon.")
                 }
                 
                 if isEditing {
@@ -126,7 +126,6 @@ struct AddExpenseView: View {
                     }
                 }
             }
-            .environment(\.dynamicTypeSize, .medium)
             .navigationTitle(isEditing ? "Modifier la dépense" : "Nouvelle dépense")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -161,25 +160,30 @@ struct AddExpenseView: View {
         }
     }
     
+    private var parsedAmount: Double? {
+        Double(amount.replacingOccurrences(of: ",", with: "."))
+    }
+    
+    private var adjustedBalance: Double {
+        voucher.remainingBalance + (existingExpense?.amount ?? 0)
+    }
+    
     private var isFormValid: Bool {
-        guard let expenseAmount = Double(amount.replacingOccurrences(of: ",", with: ".")),
-              expenseAmount > 0 else {
+        guard let expenseAmount = parsedAmount, expenseAmount > 0 else {
             return false
         }
-        return true
+        
+        return expenseAmount <= adjustedBalance
     }
     
     private func saveExpense() {
-        guard let expenseAmount = Double(amount.replacingOccurrences(of: ",", with: ".")) else {
+        guard let expenseAmount = parsedAmount else {
             errorMessage = "Montant invalide"
             showingError = true
             return
         }
         
         // Vérifier qu'on ne dépasse pas le solde (sauf si on édite et qu'on réduit le montant)
-        let currentExpenseAmount = existingExpense?.amount ?? 0
-        let adjustedBalance = voucher.remainingBalance + currentExpenseAmount
-        
         if expenseAmount > adjustedBalance {
             errorMessage = "Le montant dépasse le solde restant (\(adjustedBalance.formattedEuro))"
             showingError = true

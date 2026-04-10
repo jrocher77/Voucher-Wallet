@@ -78,7 +78,10 @@ struct VoucherSnapshot: Identifiable {
     
     var isExpired: Bool {
         guard let expirationDate else { return false }
-        return expirationDate < Date()
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let expirationDay = calendar.startOfDay(for: expirationDate)
+        return expirationDay < today
     }
     
     var daysUntilExpiration: Int? {
@@ -402,8 +405,8 @@ struct WidgetVoucherCardView: View {
                         .lineLimit(1)
                 }
                 
-                // Badge d'expiration si nécessaire
-                if let daysLeft = voucher.daysUntilExpiration, daysLeft <= 7 {
+                // Badge d'expiration affiché en permanence si une date existe
+                if let daysLeft = voucher.daysUntilExpiration {
                     expirationBadge(daysLeft: daysLeft)
                 }
             }
@@ -425,11 +428,8 @@ struct WidgetVoucherCardView: View {
             if daysLeft < 0 {
                 Text("Expiré")
                     .font(.system(size: 9, weight: .medium, design: .rounded))
-            } else if daysLeft == 0 {
-                Text("Expire aujourd'hui")
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
             } else {
-                Text("\(daysLeft)j restants")
+                Text(daysRemainingText(for: daysLeft))
                     .font(.system(size: 9, weight: .medium, design: .rounded))
             }
         }
@@ -440,6 +440,16 @@ struct WidgetVoucherCardView: View {
             Capsule()
                 .fill(daysLeft <= 0 ? .red : Color(hex: voucher.textColor).opacity(0.2))
         )
+    }
+
+    private func daysRemainingText(for daysLeft: Int) -> String {
+        if daysLeft == 0 {
+            return "Expire aujourd'hui"
+        }
+        if daysLeft == 1 {
+            return "\(daysLeft) jour restant"
+        }
+        return "\(daysLeft) jours restants"
     }
     
     private func formatCurrency(_ amount: Double) -> String {

@@ -34,6 +34,8 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
   - Filtrage par montant (min/max)
   - Tri par date d'expiration
 - **Favoris rapides** : Ajout/retrait d'un favori directement depuis l'étoile sur la carte en écran d'accueil
+- **Réorganisation par glisser-déposer** : Appui long sur une carte puis déplacement direct dans la liste d'accueil
+- **Favoris par glisser-déposer** : Déplacez une carte vers la section favoris (ou vers les autres bons) pour l'ajouter ou la retirer des favoris
 - **États visuels** :
   - Badge "Expiré" automatique
   - Affichage du solde restant

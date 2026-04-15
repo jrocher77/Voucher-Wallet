@@ -168,7 +168,10 @@ struct FavoriteVouchersProvider: TimelineProvider {
             
             let descriptor = FetchDescriptor<Voucher>(
                 predicate: #Predicate { $0.isFavorite == true },
-                sortBy: [SortDescriptor(\.dateAdded, order: .reverse)]
+                sortBy: [
+                    SortDescriptor(\.sortOrder, order: .forward),
+                    SortDescriptor(\.dateAdded, order: .reverse)
+                ]
             )
             
             let vouchers = try context.fetch(descriptor)
@@ -403,6 +406,7 @@ struct WidgetVoucherCardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Solde")
                         .font(.system(.caption2, design: .rounded))
+                        .fontWeight(.bold)
                         .foregroundStyle(Color(hex: voucher.textColor).opacity(0.8))
                     
                     Text(formatCurrency(voucher.remainingBalance))

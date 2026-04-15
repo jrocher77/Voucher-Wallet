@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(URLHandler.self) var urlHandler
@@ -19,6 +20,7 @@ struct ContentView: View {
     @State private var navigationPath = NavigationPath()
     @State private var favoritesManager: FavoritesManager?
     @State private var showingFavoriteLimitAlert = false
+    @State private var draggedVoucher: Voucher?
     
     var filteredVouchers: [Voucher] {
         var result = vouchers
@@ -39,8 +41,13 @@ struct ContentView: View {
             }
         }
         
-        // Trier par date d'ajout (plus récent en premier)
-        return result.sorted { $0.dateAdded > $1.dateAdded }
+        // Trier par ordre personnalisé, puis fallback sur la date d'ajout
+        return result.sorted {
+            if $0.sortOrder != $1.sortOrder {
+                return $0.sortOrder < $1.sortOrder
+            }
+            return $0.dateAdded > $1.dateAdded
+        }
     }
 
     var favoriteVouchers: [Voucher] {
@@ -53,6 +60,10 @@ struct ContentView: View {
     
     var uniqueStores: [String] {
         Array(Set(vouchers.map { $0.storeName })).sorted()
+    }
+
+    private var canReorder: Bool {
+        selectedStoreFilter == nil && showExpiredVouchers
     }
     
     var body: some View {
@@ -138,6 +149,7 @@ struct ContentView: View {
                 if favoritesManager == nil {
                     favoritesManager = FavoritesManager(modelContext: modelContext)
                 }
+                initializeSortOrderIfNeeded()
             }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
@@ -176,17 +188,33 @@ struct ContentView: View {
     private var voucherListView: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                if !favoriteVouchers.isEmpty {
-                    sectionHeader("Mes bons d'achat favoris")
+                if canReorder || !favoriteVouchers.isEmpty {
+                    sectionHeader("Mes bons d'achat favoris", isFavoriteSection: true)
+
+                    if favoriteVouchers.isEmpty {
+                        sectionDropHint(
+                            "Glissez un bon ici pour l'ajouter aux favoris",
+                            isFavoriteSection: true
+                        )
+                    }
+
                     ForEach(favoriteVouchers) { voucher in
-                        voucherRow(voucher)
+                        voucherRow(voucher, isFavoriteSection: true)
                     }
                 }
 
-                if !otherVouchers.isEmpty {
-                    sectionHeader("Mes autres bons d'achat")
+                if canReorder || !otherVouchers.isEmpty {
+                    sectionHeader("Mes autres bons d'achat", isFavoriteSection: false)
+
+                    if otherVouchers.isEmpty {
+                        sectionDropHint(
+                            "Glissez un bon ici pour le retirer des favoris",
+                            isFavoriteSection: false
+                        )
+                    }
+
                     ForEach(otherVouchers) { voucher in
-                        voucherRow(voucher)
+                        voucherRow(voucher, isFavoriteSection: false)
                     }
                 }
             }
@@ -195,18 +223,65 @@ struct ContentView: View {
         }
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        HStack {
+    @ViewBuilder
+    private func sectionHeader(_ title: String, isFavoriteSection: Bool) -> some View {
+        let header = HStack {
             Text(title)
                 .font(.title3)
                 .fontWeight(.semibold)
             Spacer()
         }
         .padding(.top, 4)
+
+        if canReorder {
+            header
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: VoucherDropDelegate(
+                        targetVoucher: nil,
+                        targetIsFavorite: isFavoriteSection,
+                        draggedVoucher: $draggedVoucher,
+                        onMoveToVoucher: moveVoucher,
+                        onMoveToSection: moveVoucherToSectionEnd
+                    )
+                )
+        } else {
+            header
+        }
     }
 
-    private func voucherRow(_ voucher: Voucher) -> some View {
-        ZStack(alignment: .topLeading) {
+    @ViewBuilder
+    private func sectionDropHint(_ text: String, isFavoriteSection: Bool) -> some View {
+        let hint = Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.quaternary, style: StrokeStyle(lineWidth: 1, dash: [5]))
+            )
+
+        if canReorder {
+            hint
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: VoucherDropDelegate(
+                        targetVoucher: nil,
+                        targetIsFavorite: isFavoriteSection,
+                        draggedVoucher: $draggedVoucher,
+                        onMoveToVoucher: moveVoucher,
+                        onMoveToSection: moveVoucherToSectionEnd
+                    )
+                )
+        } else {
+            hint
+        }
+    }
+
+    @ViewBuilder
+    private func voucherRow(_ voucher: Voucher, isFavoriteSection: Bool) -> some View {
+        let row = ZStack(alignment: .topLeading) {
             Button {
                 navigationPath.append(voucher)
             } label: {
@@ -235,6 +310,26 @@ struct ContentView: View {
             .zIndex(1)
         }
         .transition(.scale.combined(with: .opacity))
+
+        if canReorder {
+            row
+                .onDrag {
+                    draggedVoucher = voucher
+                    return NSItemProvider(object: voucher.id.uuidString as NSString)
+                }
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: VoucherDropDelegate(
+                        targetVoucher: voucher,
+                        targetIsFavorite: isFavoriteSection,
+                        draggedVoucher: $draggedVoucher,
+                        onMoveToVoucher: moveVoucher,
+                        onMoveToSection: moveVoucherToSectionEnd
+                    )
+                )
+        } else {
+            row
+        }
     }
 
     private func toggleFavorite(_ voucher: Voucher) {
@@ -260,6 +355,121 @@ struct ContentView: View {
             showingFavoriteLimitAlert = true
             let notificationGenerator = UINotificationFeedbackGenerator()
             notificationGenerator.notificationOccurred(.warning)
+        }
+    }
+
+    private func initializeSortOrderIfNeeded() {
+        guard vouchers.count > 1 else { return }
+        guard vouchers.allSatisfy({ $0.sortOrder == 0 }) else { return }
+
+        let orderedByDate = vouchers.sorted { $0.dateAdded > $1.dateAdded }
+        for (index, voucher) in orderedByDate.enumerated() {
+            voucher.sortOrder = index
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            print("❌ Erreur lors de l'initialisation du tri: \(error)")
+        }
+    }
+
+    private func moveVoucher(_ dragged: Voucher, _ target: Voucher, _ isFavoriteSection: Bool) {
+        guard dragged.id != target.id else { return }
+        guard target.isFavorite == isFavoriteSection else { return }
+
+        if dragged.isFavorite == isFavoriteSection {
+            var sectionVouchers = isFavoriteSection ? favoriteVouchers : otherVouchers
+            guard
+                let fromIndex = sectionVouchers.firstIndex(where: { $0.id == dragged.id }),
+                let toIndex = sectionVouchers.firstIndex(where: { $0.id == target.id }),
+                fromIndex != toIndex
+            else {
+                return
+            }
+
+            sectionVouchers.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+            )
+
+            if isFavoriteSection {
+                applySortOrder(favorites: sectionVouchers, others: otherVouchers, reloadFavoriteWidget: true)
+            } else {
+                applySortOrder(favorites: favoriteVouchers, others: sectionVouchers, reloadFavoriteWidget: false)
+            }
+            return
+        }
+
+        if isFavoriteSection && favoriteVouchers.count >= FavoritesManager.maxFavorites {
+            showingFavoriteLimitAlert = true
+            return
+        }
+
+        var sourceSection = isFavoriteSection ? otherVouchers : favoriteVouchers
+        var destinationSection = isFavoriteSection ? favoriteVouchers : otherVouchers
+
+        guard
+            let sourceIndex = sourceSection.firstIndex(where: { $0.id == dragged.id }),
+            let targetIndex = destinationSection.firstIndex(where: { $0.id == target.id })
+        else {
+            return
+        }
+
+        sourceSection.remove(at: sourceIndex)
+        destinationSection.insert(dragged, at: targetIndex)
+        dragged.isFavorite = isFavoriteSection
+
+        if isFavoriteSection {
+            applySortOrder(favorites: destinationSection, others: sourceSection, reloadFavoriteWidget: true)
+        } else {
+            applySortOrder(favorites: sourceSection, others: destinationSection, reloadFavoriteWidget: true)
+        }
+    }
+
+    private func moveVoucherToSectionEnd(_ dragged: Voucher, _ targetIsFavorite: Bool) {
+        guard dragged.isFavorite != targetIsFavorite else { return }
+
+        if targetIsFavorite && favoriteVouchers.count >= FavoritesManager.maxFavorites {
+            showingFavoriteLimitAlert = true
+            return
+        }
+
+        var sourceSection = targetIsFavorite ? otherVouchers : favoriteVouchers
+        var destinationSection = targetIsFavorite ? favoriteVouchers : otherVouchers
+
+        guard let sourceIndex = sourceSection.firstIndex(where: { $0.id == dragged.id }) else { return }
+        sourceSection.remove(at: sourceIndex)
+        destinationSection.append(dragged)
+        dragged.isFavorite = targetIsFavorite
+
+        if targetIsFavorite {
+            applySortOrder(favorites: destinationSection, others: sourceSection, reloadFavoriteWidget: true)
+        } else {
+            applySortOrder(favorites: sourceSection, others: destinationSection, reloadFavoriteWidget: true)
+        }
+    }
+
+    private func applySortOrder(favorites: [Voucher], others: [Voucher], reloadFavoriteWidget: Bool) {
+        var index = 0
+
+        for voucher in favorites {
+            voucher.sortOrder = index
+            index += 1
+        }
+
+        for voucher in others {
+            voucher.sortOrder = index
+            index += 1
+        }
+
+        do {
+            try modelContext.save()
+            if reloadFavoriteWidget {
+                WidgetReloader.reloadFavoriteVouchersWidget()
+            }
+        } catch {
+            print("❌ Erreur lors de la sauvegarde du tri: \(error)")
         }
     }
     
@@ -299,6 +509,32 @@ struct ContentView: View {
                 Label("Afficher les expirés", systemImage: "clock.badge.xmark")
             }
         }
+    }
+}
+
+private struct VoucherDropDelegate: DropDelegate {
+    let targetVoucher: Voucher?
+    let targetIsFavorite: Bool
+    @Binding var draggedVoucher: Voucher?
+    let onMoveToVoucher: (Voucher, Voucher, Bool) -> Void
+    let onMoveToSection: (Voucher, Bool) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedVoucher else { return }
+        if let targetVoucher {
+            onMoveToVoucher(draggedVoucher, targetVoucher, targetIsFavorite)
+        } else {
+            onMoveToSection(draggedVoucher, targetIsFavorite)
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedVoucher = nil
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }
 

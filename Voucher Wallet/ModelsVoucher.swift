@@ -19,6 +19,7 @@ final class Voucher {
     var codeImageData: Data?
     var expirationDate: Date?
     var dateAdded: Date
+    var sortOrder: Int = 0
     var pdfData: Data?
     var storeColor: String // Hex color code
     var textColor: String // Hex color code for text
@@ -52,6 +53,7 @@ final class Voucher {
         codeImageData: Data? = nil,
         expirationDate: Date? = nil,
         dateAdded: Date = Date(),
+        sortOrder: Int = 0,
         pdfData: Data? = nil,
         storeColor: String = "#007AFF",
         textColor: String = "#FFFFFF"
@@ -65,6 +67,7 @@ final class Voucher {
         self.codeImageData = codeImageData
         self.expirationDate = expirationDate
         self.dateAdded = dateAdded
+        self.sortOrder = sortOrder
         self.pdfData = pdfData
         self.storeColor = storeColor
         self.textColor = textColor

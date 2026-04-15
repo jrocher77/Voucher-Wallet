@@ -203,6 +203,7 @@ class VoucherImportViewModel {
         
         let colorHex = globalCardColor.toHex()
         let textColorHex = globalTextColor.toHex()
+        var nextSortOrder = getNextSortOrder(in: modelContext)
         
         var importedCount = 0
         
@@ -223,6 +224,7 @@ class VoucherImportViewModel {
                 codeType: detectedVoucher.codeType,
                 codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
                 expirationDate: detectedVoucher.expirationDate,
+                sortOrder: nextSortOrder,
                 pdfData: pdfData,
                 storeColor: colorHex,
                 textColor: textColorHex
@@ -238,6 +240,7 @@ class VoucherImportViewModel {
             }
             
             importedCount += 1
+            nextSortOrder += 1
         }
         
         try modelContext.save()
@@ -289,6 +292,7 @@ class VoucherImportViewModel {
             codeType: codeType,
             codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
             expirationDate: expirationDate,
+            sortOrder: getNextSortOrder(in: modelContext),
             pdfData: pdfData,
             storeColor: colorHex,
             textColor: textColorHex
@@ -304,5 +308,19 @@ class VoucherImportViewModel {
         
         try modelContext.save()
         print("✅ Bon importé: \(storeName)")
+    }
+
+    private func getNextSortOrder(in modelContext: ModelContext) -> Int {
+        let descriptor = FetchDescriptor<Voucher>(
+            sortBy: [SortDescriptor(\.sortOrder, order: .reverse)]
+        )
+
+        do {
+            let vouchers = try modelContext.fetch(descriptor)
+            return (vouchers.first?.sortOrder ?? -1) + 1
+        } catch {
+            print("⚠️ Impossible de calculer le prochain sortOrder: \(error)")
+            return 0
+        }
     }
 }

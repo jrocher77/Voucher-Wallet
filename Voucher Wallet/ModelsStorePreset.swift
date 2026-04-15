@@ -67,7 +67,9 @@ struct StorePreset {
         "Steam": "#1B2838",
         "Netflix": "#E50914",
         "Spotify": "#1DB954",
-        "Google Play": "#01875F"
+        "Google Play": "#01875F",
+        "Pathé": "#FFD100",
+        "Pathe": "#FFD100"
     ]
     
     /// Couleurs de texte par défaut pour les enseignes connues
@@ -126,7 +128,9 @@ struct StorePreset {
         "Steam": "#66C0F4",
         "Netflix": "#FFF2F2",
         "Spotify": "#0B1F14",
-        "Google Play": "#E8FFF7"
+        "Google Play": "#E8FFF7",
+        "Pathé": "#1A1A1A",
+        "Pathe": "#1A1A1A"
     ]
     
     static func getColor(for storeName: String) -> String {

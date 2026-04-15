@@ -34,6 +34,8 @@ final class FavoritesManager {
             
             // Ajouter aux favoris
             voucher.isFavorite = true
+            let maxSortOrder = currentFavorites.map(\.sortOrder).max() ?? -1
+            voucher.sortOrder = maxSortOrder + 1
             try? modelContext.save()
             return .added
         }
@@ -43,7 +45,10 @@ final class FavoritesManager {
     func getFavoriteVouchers() -> [Voucher] {
         let descriptor = FetchDescriptor<Voucher>(
             predicate: #Predicate { $0.isFavorite == true },
-            sortBy: [SortDescriptor(\.dateAdded, order: .reverse)]
+            sortBy: [
+                SortDescriptor(\.sortOrder, order: .forward),
+                SortDescriptor(\.dateAdded, order: .reverse)
+            ]
         )
         
         do {

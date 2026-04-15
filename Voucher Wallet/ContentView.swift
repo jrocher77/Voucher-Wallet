@@ -10,12 +10,15 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(URLHandler.self) var urlHandler
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Voucher.dateAdded, order: .reverse) private var vouchers: [Voucher]
     
     @State private var showingAddVoucher = false
     @State private var selectedStoreFilter: String?
     @State private var showExpiredVouchers = true
     @State private var navigationPath = NavigationPath()
+    @State private var favoritesManager: FavoritesManager?
+    @State private var showingFavoriteLimitAlert = false
     
     var filteredVouchers: [Voucher] {
         var result = vouchers
@@ -36,16 +39,16 @@ struct ContentView: View {
             }
         }
         
-        // Trier : favoris en premier, puis par date d'ajout
-        return result.sorted { lhs, rhs in
-            if lhs.isFavorite && !rhs.isFavorite {
-                return true
-            } else if !lhs.isFavorite && rhs.isFavorite {
-                return false
-            } else {
-                return lhs.dateAdded > rhs.dateAdded
-            }
-        }
+        // Trier par date d'ajout (plus récent en premier)
+        return result.sorted { $0.dateAdded > $1.dateAdded }
+    }
+
+    var favoriteVouchers: [Voucher] {
+        filteredVouchers.filter { $0.isFavorite }
+    }
+
+    var otherVouchers: [Voucher] {
+        filteredVouchers.filter { !$0.isFavorite }
     }
     
     var uniqueStores: [String] {
@@ -61,7 +64,6 @@ struct ContentView: View {
                     voucherListView
                 }
             }
-            .navigationTitle("Mes Bons")
             .navigationDestination(for: Voucher.self) { voucher in
                 VoucherDetailView(voucher: voucher)
             }
@@ -127,6 +129,16 @@ struct ContentView: View {
                     urlHandler.selectedVoucherID = nil
                 }
             }
+            .alert("Limite atteinte", isPresented: $showingFavoriteLimitAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("Vous ne pouvez avoir que 4 cartes en favoris. Veuillez d'abord retirer une carte des favoris.")
+            }
+            .onAppear {
+                if favoritesManager == nil {
+                    favoritesManager = FavoritesManager(modelContext: modelContext)
+                }
+            }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
     }
@@ -164,18 +176,90 @@ struct ContentView: View {
     private var voucherListView: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                ForEach(filteredVouchers) { voucher in
-                    Button {
-                        navigationPath.append(voucher)
-                    } label: {
-                        VoucherCardView(voucher: voucher)
+                if !favoriteVouchers.isEmpty {
+                    sectionHeader("Mes bons d'achat favoris")
+                    ForEach(favoriteVouchers) { voucher in
+                        voucherRow(voucher)
                     }
-                    .buttonStyle(.plain)
-                    .transition(.scale.combined(with: .opacity))
+                }
+
+                if !otherVouchers.isEmpty {
+                    sectionHeader("Mes autres bons d'achat")
+                    ForEach(otherVouchers) { voucher in
+                        voucherRow(voucher)
+                    }
                 }
             }
             .padding()
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: filteredVouchers.map { $0.id })
+            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: filteredVouchers.map(\.id))
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.title3)
+                .fontWeight(.semibold)
+            Spacer()
+        }
+        .padding(.top, 4)
+    }
+
+    private func voucherRow(_ voucher: Voucher) -> some View {
+        ZStack(alignment: .topLeading) {
+            Button {
+                navigationPath.append(voucher)
+            } label: {
+                VoucherCardView(voucher: voucher, showsFavoriteIcon: false)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                toggleFavorite(voucher)
+            } label: {
+                ZStack(alignment: .topLeading) {
+                    Color.black.opacity(0.001)
+                        .frame(width: 56, height: 56)
+
+                    Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+                        .font(.title2)
+                        .foregroundStyle(voucher.isFavorite ? .yellow : Color(hex: voucher.textColor).opacity(0.9))
+                        .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                        .symbolEffect(.bounce, value: voucher.isFavorite)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .padding(.top, 12)
+            .zIndex(1)
+        }
+        .transition(.scale.combined(with: .opacity))
+    }
+
+    private func toggleFavorite(_ voucher: Voucher) {
+        let manager: FavoritesManager
+        if let existingManager = favoritesManager {
+            manager = existingManager
+        } else {
+            let newManager = FavoritesManager(modelContext: modelContext)
+            favoritesManager = newManager
+            manager = newManager
+        }
+        
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.prepare()
+        
+        let result = manager.toggleFavorite(voucher)
+        
+        switch result {
+        case .added, .removed:
+            generator.impactOccurred()
+            WidgetReloader.reloadFavoriteVouchersWidget()
+        case .limitReached:
+            showingFavoriteLimitAlert = true
+            let notificationGenerator = UINotificationFeedbackGenerator()
+            notificationGenerator.notificationOccurred(.warning)
         }
     }
     

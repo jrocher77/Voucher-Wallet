@@ -31,20 +31,23 @@ struct VoucherCardView: View {
                 Spacer()
                 
                 if let amount = voucher.amount {
-                    // Solde restant (principal) - aligné sur la baseline
-                    Text(voucher.remainingBalance.formattedEuro)
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(textColor)
-                        .overlay(alignment: .bottom) {
-                            // Montant initial (petit) en dessous
-                            if voucher.totalExpenses > 0 {
-                                Text("sur \(amount.formattedEuro)")
-                                    .font(.caption2)
-                                    .foregroundStyle(textColor.opacity(0.7))
-                                    .offset(y: 14)
-                            }
+                    // Montants alignés à droite sans clipping du montant initial
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(voucher.remainingBalance.formattedEuro)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(textColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        
+                        if voucher.totalExpenses > 0 {
+                            Text("sur \(amount.formattedEuro)")
+                                .font(.caption2)
+                                .foregroundStyle(textColor.opacity(0.7))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
                         }
+                    }
                 }
             }
             .padding(.top, -8)

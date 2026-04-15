@@ -53,7 +53,7 @@ struct FavoriteVouchersWidget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
         }
         .contentMarginsDisabled()
-        .configurationDisplayName("Cartes Favorites")
+        .configurationDisplayName("Mes bons d'achat favoris")
         .description("Affiche vos cartes de fidélité et bons d'achat favoris.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
@@ -72,6 +72,8 @@ struct VoucherSnapshot: Identifiable {
     let id: UUID
     let storeName: String
     let remainingBalance: Double
+    let originalAmount: Double?
+    let totalExpenses: Double
     let storeColor: String
     let textColor: String
     let expirationDate: Date?
@@ -106,6 +108,8 @@ struct FavoriteVouchersProvider: TimelineProvider {
                     id: UUID(),
                     storeName: "Carrefour",
                     remainingBalance: 50.0,
+                    originalAmount: 50.0,
+                    totalExpenses: 0,
                     storeColor: "#0066CC",
                     textColor: "#FFFFFF",
                     expirationDate: Calendar.current.date(byAdding: .day, value: 30, to: Date())
@@ -114,6 +118,8 @@ struct FavoriteVouchersProvider: TimelineProvider {
                     id: UUID(),
                     storeName: "Decathlon",
                     remainingBalance: 100.0,
+                    originalAmount: 100.0,
+                    totalExpenses: 0,
                     storeColor: "#0082C3",
                     textColor: "#FFFFFF",
                     expirationDate: Calendar.current.date(byAdding: .day, value: 60, to: Date())
@@ -174,6 +180,8 @@ struct FavoriteVouchersProvider: TimelineProvider {
                     id: voucher.id,
                     storeName: voucher.storeName,
                     remainingBalance: voucher.remainingBalance,
+                    originalAmount: voucher.amount,
+                    totalExpenses: voucher.totalExpenses,
                     storeColor: voucher.storeColor,
                     textColor: voucher.textColor,
                     expirationDate: voucher.expirationDate
@@ -354,7 +362,7 @@ struct FavoriteVouchersWidgetView: View {
         HStack {
             Image(systemName: "star.fill")
                 .foregroundStyle(.yellow)
-            Text("Mes bons favoris")
+            Text("Mes bons d'achat favoris")
                 .font(.headline)
                 .foregroundStyle(.primary)
             Spacer()
@@ -403,6 +411,14 @@ struct WidgetVoucherCardView: View {
                         .foregroundStyle(Color(hex: voucher.textColor))
                         .minimumScaleFactor(0.8)
                         .lineLimit(1)
+
+                    if voucher.totalExpenses > 0, let originalAmount = voucher.originalAmount {
+                        Text("sur \(formatCurrency(originalAmount))")
+                            .font(.system(.caption2, design: .rounded))
+                            .foregroundStyle(Color(hex: voucher.textColor).opacity(0.75))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
                 }
                 
                 // Badge d'expiration affiché en permanence si une date existe
@@ -473,6 +489,8 @@ struct WidgetVoucherCardView: View {
                 id: UUID(),
                 storeName: "Carrefour",
                 remainingBalance: 50.0,
+                originalAmount: 80.0,
+                totalExpenses: 30.0,
                 storeColor: "#0066CC",
                 textColor: "#FFFFFF",
                 expirationDate: Calendar.current.date(byAdding: .day, value: 5, to: Date())
@@ -481,6 +499,8 @@ struct WidgetVoucherCardView: View {
                 id: UUID(),
                 storeName: "Decathlon",
                 remainingBalance: 100.0,
+                originalAmount: 100.0,
+                totalExpenses: 0.0,
                 storeColor: "#0082C3",
                 textColor: "#FFFFFF",
                 expirationDate: Calendar.current.date(byAdding: .day, value: 60, to: Date())
@@ -504,6 +524,8 @@ struct WidgetVoucherCardView: View {
                 id: UUID(),
                 storeName: "Carrefour",
                 remainingBalance: 50.0,
+                originalAmount: 80.0,
+                totalExpenses: 30.0,
                 storeColor: "#0066CC",
                 textColor: "#FFFFFF",
                 expirationDate: Calendar.current.date(byAdding: .day, value: 5, to: Date())
@@ -512,6 +534,8 @@ struct WidgetVoucherCardView: View {
                 id: UUID(),
                 storeName: "Decathlon",
                 remainingBalance: 100.0,
+                originalAmount: 100.0,
+                totalExpenses: 0.0,
                 storeColor: "#0082C3",
                 textColor: "#FFFFFF",
                 expirationDate: Calendar.current.date(byAdding: .day, value: 60, to: Date())
@@ -520,6 +544,8 @@ struct WidgetVoucherCardView: View {
                 id: UUID(),
                 storeName: "Fnac",
                 remainingBalance: 25.0,
+                originalAmount: 50.0,
+                totalExpenses: 25.0,
                 storeColor: "#F39200",
                 textColor: "#FFFFFF",
                 expirationDate: Calendar.current.date(byAdding: .day, value: 2, to: Date())
@@ -528,6 +554,8 @@ struct WidgetVoucherCardView: View {
                 id: UUID(),
                 storeName: "Amazon",
                 remainingBalance: 75.0,
+                originalAmount: 75.0,
+                totalExpenses: 0.0,
                 storeColor: "#FF9900",
                 textColor: "#000000",
                 expirationDate: Calendar.current.date(byAdding: .month, value: 6, to: Date())

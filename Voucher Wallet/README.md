@@ -185,8 +185,8 @@ private func isVoucherNumberDuplicate(_ number: String) -> Bool {
 
 ### Fichiers Concernés
 - `ViewsAddVoucherView.swift`
-- `ViewsPDFImportHandler.swift`
-- `ViewsMultiVoucherSelectionView.swift`
+- `ViewComponentsMultiVoucherList.swift`
+- `ViewComponentsVoucherEditorView.swift`
 
 ---
 
@@ -212,8 +212,8 @@ Voucher Wallet/
 │   │   └── EditVoucherView.swift
 │   │
 │   ├── Import & Selection
-│   │   ├── PDFImportHandler.swift
-│   │   └── MultiVoucherSelectionView.swift
+│   │   ├── AddVoucherView.swift (flux unique: ajout manuel + PDF + partage)
+│   │   └── ViewComponentsMultiVoucherList.swift
 │   │
 │   ├── Expenses
 │   │   ├── AddExpenseView.swift

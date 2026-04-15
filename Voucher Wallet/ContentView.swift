@@ -104,7 +104,7 @@ struct ContentView: View {
                 }}
             )) {
                 if let pdfData = urlHandler.pdfData {
-                    PDFImportHandler(pdfData: pdfData)
+                    AddVoucherView(initialPDFData: pdfData, allowsManualEntry: false)
                 }
             }
             .onChange(of: urlHandler.shouldShowImport) { oldValue, newValue in

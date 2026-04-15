@@ -38,17 +38,28 @@ struct AddVoucherView: View {
     @State private var selectedColor = Color(hex: "#007AFF")
     @State private var selectedTextColor = Color(hex: "#FFFFFF")
     @State private var detectedStoreConfidence: Double?
+    @State private var hasProcessedInitialPDF = false
+
+    private let initialPDFData: Data?
+    private let allowsManualEntry: Bool
     
     enum AddMethod {
         case scan
         case manual
+    }
+
+    init(initialPDFData: Data? = nil, allowsManualEntry: Bool = true) {
+        self.initialPDFData = initialPDFData
+        self.allowsManualEntry = allowsManualEntry
     }
     
     var body: some View {
         NavigationStack {
             Form {
                 // Choix de la méthode
-                methodPicker
+                if allowsManualEntry {
+                    methodPicker
+                }
                 
                 if addMethod == .scan {
                     scanSection
@@ -95,6 +106,9 @@ struct AddVoucherView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(viewModel.errorMessage)
+            }
+            .task {
+                await processInitialPDFIfNeeded()
             }
         }
     }
@@ -307,6 +321,18 @@ struct AddVoucherView: View {
             viewModel.errorMessage = error.localizedDescription
             viewModel.showingError = true
         }
+    }
+
+    @MainActor
+    private func processInitialPDFIfNeeded() async {
+        guard let initialPDFData, !hasProcessedInitialPDF else { return }
+
+        hasProcessedInitialPDF = true
+        addMethod = .scan
+        selectedPDFData = initialPDFData
+
+        await viewModel.analyzePDF(data: initialPDFData)
+        setupAfterAnalysis()
     }
     
     private func setupAfterAnalysis() {

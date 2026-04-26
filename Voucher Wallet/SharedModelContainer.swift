@@ -38,7 +38,7 @@ enum SharedModelContainer {
                 schema: schema,
                 isStoredInMemoryOnly: false,
                 groupContainer: .identifier(appGroupIdentifier),
-                cloudKitDatabase: .none // Changez en .automatic pour activer iCloud
+                cloudKitDatabase: .none
             )
         }
 

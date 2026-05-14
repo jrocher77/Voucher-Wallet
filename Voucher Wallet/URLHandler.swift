@@ -53,26 +53,19 @@ class URLHandler {
     
     private func handlePDFURL(_ url: URL) {
         do {
-            if url.startAccessingSecurityScopedResource() {
-                defer { url.stopAccessingSecurityScopedResource() }
-                let data = try Data(contentsOf: url)
-                print("✅ PDF read successfully: \(data.count) bytes")
-                
-                DispatchQueue.main.async {
-                    self.pdfData = data
-                    self.shouldShowImport = true
-                    print("✅ URLHandler - Sheet should show now")
-                }
-            } else {
-                // Try without security scoped
-                let data = try Data(contentsOf: url)
-                print("✅ PDF read (no security scope): \(data.count) bytes")
-                
-                DispatchQueue.main.async {
-                    self.pdfData = data
-                    self.shouldShowImport = true
-                    print("✅ URLHandler - Sheet should show now")
-                }
+            guard url.startAccessingSecurityScopedResource() else {
+                print("❌ Unable to access security-scoped PDF")
+                return
+            }
+
+            defer { url.stopAccessingSecurityScopedResource() }
+            let data = try Data(contentsOf: url)
+            print("✅ PDF read successfully: \(data.count) bytes")
+
+            DispatchQueue.main.async {
+                self.pdfData = data
+                self.shouldShowImport = true
+                print("✅ URLHandler - Sheet should show now")
             }
         } catch {
             print("❌ Error reading PDF: \(error)")

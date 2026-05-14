@@ -276,15 +276,9 @@ open "Voucher Wallet.xcodeproj"
 
 ### 3. Configurer Info.plist
 
-Assurez-vous que les permissions suivantes sont présentes :
+Assurez-vous que la prise en charge des PDF est présente. L'app importe des PDF via le sélecteur de documents iOS et n'a pas besoin des permissions caméra ou photothèque tant qu'aucune fonctionnalité dédiée ne les utilise.
 
 ```xml
-<key>NSCameraUsageDescription</key>
-<string>Pour scanner les codes-barres de vos bons d'achat</string>
-
-<key>NSPhotoLibraryUsageDescription</key>
-<string>Pour accéder aux PDF de vos bons d'achat</string>
-
 <key>UTImportedTypeDeclarations</key>
 <array>
     <dict>

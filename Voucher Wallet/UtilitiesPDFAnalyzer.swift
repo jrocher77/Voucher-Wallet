@@ -452,50 +452,69 @@ class PDFAnalyzer {
         return uniqueNumbers
     }
     
-    /// Extrait les codes PIN possibles (1 à 10 chiffres)
+    /// Extrait les codes PIN possibles (chiffres ou lettres quand le libellé est explicite)
     private static func extractPinCodes(from text: String) -> [String] {
         var pins: [String] = []
-        
-        // 1. Rechercher "Code PIN" ou "Code pin" (le plus spécifique)
-        let codePinPattern = #/Code\s+(PIN|pin|Pin)[\s:]*(\d{1,10})(?!\d)/#
-        let codePinMatches = text.matches(of: codePinPattern)
-        for match in codePinMatches {
-            let pinCode = String(match.2)
-            pins.append(pinCode)
-            print("📍 Code PIN détecté (pattern 'Code PIN'): \(pinCode)")
+
+        func addMatches(pattern: String, groupIndex: Int, label: String) {
+            let nsText = text as NSString
+            let fullRange = NSRange(location: 0, length: nsText.length)
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return
+            }
+
+            for match in regex.matches(in: text, range: fullRange) {
+                let range = match.range(at: groupIndex)
+                guard range.location != NSNotFound else { continue }
+
+                let pinCode = nsText.substring(with: range)
+                pins.append(pinCode)
+                print("📍 Code PIN détecté (pattern '\(label)'): \(pinCode)")
+            }
         }
-        
+
+        // 1. Rechercher "Code PIN" ou "Code pin" (le plus spécifique)
+        addMatches(
+            pattern: #"\bCode\s+PIN\s*[:：]\s*([A-Z0-9]{1,10})\b"#,
+            groupIndex: 1,
+            label: "Code PIN"
+        )
+
+        addMatches(
+            pattern: #"\bCode\s+PIN\s+(\d{1,10})\b"#,
+            groupIndex: 1,
+            label: "Code PIN numérique"
+        )
+
         // 2. Rechercher "PIN" ou "pin" suivi de chiffres (moins spécifique)
         // Seulement si on n'a pas déjà trouvé de PIN avec le pattern précédent
         if pins.isEmpty {
-            let pinPattern = #/(PIN|pin|Pin)[\s:]*(\d{1,10})(?!\d)/#
-            let matches = text.matches(of: pinPattern)
-            
-            for match in matches {
-                let pinCode = String(match.2)
-                pins.append(pinCode)
-                print("📍 Code PIN détecté (pattern 'PIN'): \(pinCode)")
-            }
+            addMatches(
+                pattern: #"\bPIN\s*[:：]\s*([A-Z0-9]{1,10})\b"#,
+                groupIndex: 1,
+                label: "PIN"
+            )
+
+            addMatches(
+                pattern: #"\bPIN\s+(\d{1,10})\b"#,
+                groupIndex: 1,
+                label: "PIN numérique"
+            )
         }
-        
+
         // 3. Rechercher "code secret" (utilisé par certaines enseignes)
-        // Chercher les deux variantes de casse séparément
-        let secretPatternLower = #/(code\s+secret|secret)[\s:]*(\d{1,10})(?!\d)/#
-        let secretMatches = text.matches(of: secretPatternLower)
-        for match in secretMatches {
-            let pinCode = String(match.2)
-            pins.append(pinCode)
-            print("📍 Code PIN détecté (pattern 'code secret'): \(pinCode)")
-        }
-        
-        let secretPatternUpper = #/(Code\s+Secret|Secret|CODE\s+SECRET|SECRET)[\s:]*(\d{1,10})(?!\d)/#
-        let secretMatchesUpper = text.matches(of: secretPatternUpper)
-        for match in secretMatchesUpper {
-            let pinCode = String(match.2)
-            pins.append(pinCode)
-            print("📍 Code PIN détecté (pattern 'Code Secret'): \(pinCode)")
-        }
-        
+        addMatches(
+            pattern: #"\b(?:code\s+secret|secret)\s*[:：]\s*([A-Z0-9]{1,10})\b"#,
+            groupIndex: 1,
+            label: "code secret"
+        )
+
+        addMatches(
+            pattern: #"\b(?:code\s+secret|secret)\s+(\d{1,10})\b"#,
+            groupIndex: 1,
+            label: "code secret numérique"
+        )
+
         let uniquePins = Array(Set(pins))
         if !uniquePins.isEmpty {
             print("🔐 Codes PIN extraits: \(uniquePins)")

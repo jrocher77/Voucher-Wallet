@@ -53,13 +53,7 @@ class URLHandler {
     
     private func handlePDFURL(_ url: URL) {
         do {
-            guard url.startAccessingSecurityScopedResource() else {
-                print("❌ Unable to access security-scoped PDF")
-                return
-            }
-
-            defer { url.stopAccessingSecurityScopedResource() }
-            let data = try Data(contentsOf: url)
+            let data = try readPDFData(from: url)
             print("✅ PDF read successfully: \(data.count) bytes")
 
             DispatchQueue.main.async {
@@ -70,5 +64,18 @@ class URLHandler {
         } catch {
             print("❌ Error reading PDF: \(error)")
         }
+    }
+
+    private func readPDFData(from url: URL) throws -> Data {
+        if url.startAccessingSecurityScopedResource() {
+            defer { url.stopAccessingSecurityScopedResource() }
+            return try Data(contentsOf: url)
+        }
+
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            throw CocoaError(.fileReadNoPermission)
+        }
+
+        return try Data(contentsOf: url)
     }
 }

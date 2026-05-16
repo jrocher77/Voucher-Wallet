@@ -506,27 +506,68 @@ class PDFAnalyzer {
     
     /// Extrait les montants en euros
     private static func extractAmounts(from text: String) -> [Double] {
-        var amounts: [Double] = []
-        
-        // Pattern: montants avec € ou EUR
-        let patterns = [
-            #/(\d+[.,]\d{2})\s*€/#,
-            #/(\d+)\s*€/#,
-            #/€\s*(\d+[.,]\d{2})/#,
-            #/(\d+[.,]\d{2})\s*EUR/#
-        ]
-        
-        for pattern in patterns {
-            let matches = text.matches(of: pattern)
-            for match in matches {
-                let amountStr = String(match.1).replacingOccurrences(of: ",", with: ".")
-                if let amount = Double(amountStr) {
-                    amounts.append(amount)
+        struct AmountCandidate {
+            let amount: Double
+            let score: Int
+            let order: Int
+        }
+
+        var candidates: [AmountCandidate] = []
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        let pattern = #"(?i)(?:€\s*(\d+(?:[.,]\d{2})?)|(\d+(?:[.,]\d{2})?)\s*(?:€|EUR))"#
+
+        guard let regex = try? NSRegularExpression(pattern: pattern) else {
+            return []
+        }
+
+        for (index, match) in regex.matches(in: text, range: fullRange).enumerated() {
+            let amountRange = match.range(at: 1).location != NSNotFound ? match.range(at: 1) : match.range(at: 2)
+            let amountString = nsText.substring(with: amountRange).replacingOccurrences(of: ",", with: ".")
+
+            guard let amount = Double(amountString) else { continue }
+
+            let contextStart = max(0, match.range.location - 60)
+            let contextEnd = min(nsText.length, match.range.location + match.range.length + 60)
+            let contextRange = NSRange(location: contextStart, length: contextEnd - contextStart)
+            let context = nsText.substring(with: contextRange).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+
+            var score = 0
+            let positiveKeywords = ["montant", "valeur", "solde", "credit", "chargee", "carte cadeau", "e-carte cadeau"]
+            let negativeKeywords = ["maximum", "maxi", "plafond", "limite", "jusqu", "conditions", "cgv", "reglement", "minimum", "entre", "librement", "determine"]
+
+            for keyword in positiveKeywords where context.contains(keyword) {
+                score += 3
+            }
+
+            for keyword in negativeKeywords where context.contains(keyword) {
+                score -= 5
+            }
+
+            if amount >= 500 {
+                score -= 2
+            }
+
+            candidates.append(AmountCandidate(amount: amount, score: score, order: index))
+        }
+
+        var bestByAmount: [Double: AmountCandidate] = [:]
+        for candidate in candidates {
+            if let existing = bestByAmount[candidate.amount] {
+                if candidate.score > existing.score || (candidate.score == existing.score && candidate.order < existing.order) {
+                    bestByAmount[candidate.amount] = candidate
                 }
+            } else {
+                bestByAmount[candidate.amount] = candidate
             }
         }
-        
-        return Array(Set(amounts)).sorted(by: >)
+
+        return bestByAmount.values.sorted { lhs, rhs in
+            if lhs.score != rhs.score {
+                return lhs.score > rhs.score
+            }
+            return lhs.order < rhs.order
+        }.map(\.amount)
     }
     
     /// Extrait les dates possibles

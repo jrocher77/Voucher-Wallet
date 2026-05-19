@@ -21,6 +21,11 @@ struct ContentView: View {
     @State private var favoritesManager: FavoritesManager?
     @State private var showingFavoriteLimitAlert = false
     @State private var draggedVoucher: Voucher?
+    @State private var voucherToEdit: Voucher?
+    @State private var voucherToDelete: Voucher?
+    @State private var showingDeleteAlert = false
+
+    private let favoriteChangeAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
     
     var filteredVouchers: [Voucher] {
         var result = vouchers
@@ -100,6 +105,9 @@ struct ContentView: View {
             .sheet(isPresented: $showingAddVoucher) {
                 AddVoucherView()
             }
+            .sheet(item: $voucherToEdit) { voucher in
+                EditVoucherView(voucher: voucher)
+            }
             .onChange(of: showingAddVoucher) { oldValue, newValue in
                 // Quand on ferme la vue d'ajout, recharger le widget
                 if oldValue && !newValue {
@@ -144,6 +152,16 @@ struct ContentView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("Vous ne pouvez avoir que 4 cartes en favoris. Veuillez d'abord retirer une carte des favoris.")
+            }
+            .alert("Supprimer ce bon ?", isPresented: $showingDeleteAlert) {
+                Button("Annuler", role: .cancel) {
+                    voucherToDelete = nil
+                }
+                Button("Supprimer", role: .destructive) {
+                    deleteVoucherPendingDeletion()
+                }
+            } message: {
+                Text("Cette action est irréversible.")
             }
             .onAppear {
                 if favoritesManager == nil {
@@ -219,7 +237,8 @@ struct ContentView: View {
                 }
             }
             .padding()
-            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: filteredVouchers.map(\.id))
+            .animation(favoriteChangeAnimation, value: favoriteVouchers.map(\.id))
+            .animation(favoriteChangeAnimation, value: otherVouchers.map(\.id))
         }
     }
 
@@ -309,7 +328,10 @@ struct ContentView: View {
             .padding(.top, 12)
             .zIndex(1)
         }
-        .transition(.scale.combined(with: .opacity))
+        .transition(.opacity.combined(with: .move(edge: .top)))
+        .contextMenu {
+            voucherContextMenu(for: voucher)
+        }
 
         if canReorder {
             row
@@ -332,6 +354,39 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func voucherContextMenu(for voucher: Voucher) -> some View {
+        Button {
+            toggleFavoriteFromContextMenu(voucher)
+        } label: {
+            Label(
+                voucher.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+                systemImage: voucher.isFavorite ? "star.fill" : "star"
+            )
+        }
+
+        Button {
+            voucherToEdit = voucher
+        } label: {
+            Label("Modifier", systemImage: "pencil")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            voucherToDelete = voucher
+            showingDeleteAlert = true
+        } label: {
+            Label("Supprimer", systemImage: "trash")
+        }
+    }
+
+    private func toggleFavoriteFromContextMenu(_ voucher: Voucher) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            toggleFavorite(voucher)
+        }
+    }
+
     private func toggleFavorite(_ voucher: Voucher) {
         let manager: FavoritesManager
         if let existingManager = favoritesManager {
@@ -344,8 +399,10 @@ struct ContentView: View {
         
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.prepare()
-        
-        let result = manager.toggleFavorite(voucher)
+
+        let result = withAnimation(favoriteChangeAnimation) {
+            manager.toggleFavorite(voucher)
+        }
         
         switch result {
         case .added, .removed:
@@ -356,6 +413,23 @@ struct ContentView: View {
             let notificationGenerator = UINotificationFeedbackGenerator()
             notificationGenerator.notificationOccurred(.warning)
         }
+    }
+
+    private func deleteVoucherPendingDeletion() {
+        guard let voucher = voucherToDelete else { return }
+        let wasFavorite = voucher.isFavorite
+
+        modelContext.delete(voucher)
+        do {
+            try modelContext.save()
+            if wasFavorite {
+                WidgetReloader.reloadFavoriteVouchersWidget()
+            }
+        } catch {
+            print("❌ Erreur lors de la suppression du bon: \(error)")
+        }
+
+        voucherToDelete = nil
     }
 
     private func initializeSortOrderIfNeeded() {

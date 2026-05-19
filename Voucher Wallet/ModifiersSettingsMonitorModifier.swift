@@ -14,12 +14,13 @@ struct SettingsMonitorModifier: ViewModifier {
     
     @State private var showingResetConfirmation = false
     @State private var showingResetSuccess = false
-    @State private var hasCheckedOnAppear = false
+    @State private var showingOnboarding = false
     
     func body(content: Content) -> some View {
         content
             .onAppear {
                 print("✨ SettingsMonitorModifier - onAppear")
+                checkForOnboarding()
                 checkForReset()
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
@@ -27,7 +28,13 @@ struct SettingsMonitorModifier: ViewModifier {
                 
                 if newPhase == .active {
                     print("🔄 App devient active - Vérification des réglages...")
+                    checkForOnboarding()
                     checkForReset()
+                }
+            }
+            .fullScreenCover(isPresented: $showingOnboarding) {
+                OnboardingView {
+                    showingOnboarding = false
                 }
             }
             .alert("Réinitialiser l'apprentissage ?", isPresented: $showingResetConfirmation) {
@@ -61,6 +68,15 @@ struct SettingsMonitorModifier: ViewModifier {
         if resetRequested {
             print("⚠️ Affichage de l'alerte de réinitialisation")
             showingResetConfirmation = true
+        }
+    }
+
+    private func checkForOnboarding() {
+        guard !showingOnboarding else { return }
+
+        if SettingsManager.shared.shouldShowOnboarding() {
+            print("👋 Affichage de la démonstration")
+            showingOnboarding = true
         }
     }
 }

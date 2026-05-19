@@ -73,11 +73,7 @@ struct SettingsView: View {
                 Section {
                     // Statistiques
                     learningStatsView
-                } header: {
-                    Text("Statistiques")
-                }
-                
-                Section {
+                    
                     Button(role: .destructive) {
                         showingResetConfirmation = true
                     } label: {
@@ -87,13 +83,11 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Données")
+                    Text("Statistiques")
                 } footer: {
                     Text("Cette action supprimera toutes les données d'apprentissage (enseignes mémorisées, préférences de couleurs). Vos bons ne seront pas affectés.")
                 }
             }
-            .navigationTitle("Réglages")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("OK") {

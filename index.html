@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Page de support de Voucher Wallet, application iOS de gestion de bons d'achat.">
+  <title>Support - Voucher Wallet</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f6f1;
+      --surface: #ffffff;
+      --surface-soft: #eef5f2;
+      --text: #18201d;
+      --muted: #5d6964;
+      --accent: #0f766e;
+      --accent-dark: #0b4f4a;
+      --line: #dce3df;
+      --shadow: 0 18px 50px rgba(23, 35, 31, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(15, 118, 110, 0.12), rgba(247, 246, 241, 0) 420px),
+        var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent-dark);
+      font-weight: 650;
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    .page {
+      width: min(1040px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 48px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      gap: 24px;
+      align-items: center;
+      padding: 42px 0 34px;
+    }
+
+    .app-icon {
+      width: 112px;
+      height: 112px;
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-dark);
+      font-size: 0.82rem;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.25rem, 6vw, 4.4rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 690px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.16rem;
+    }
+
+    main {
+      display: grid;
+      gap: 18px;
+    }
+
+    section {
+      padding: 26px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: 0 8px 26px rgba(23, 35, 31, 0.06);
+    }
+
+    .highlight {
+      background: var(--surface);
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    p:last-child {
+      margin-bottom: 0;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.2rem;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 750;
+      text-decoration: none;
+    }
+
+    .button.secondary {
+      border: 1px solid var(--line);
+      background: var(--surface-soft);
+      color: var(--accent-dark);
+    }
+
+    .steps {
+      display: grid;
+      gap: 14px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .steps li {
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+
+    .steps strong {
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    .note {
+      padding: 16px 18px;
+      border-radius: 8px;
+      background: #fff7df;
+      color: #4a3510;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    footer {
+      margin-top: 26px;
+      color: var(--muted);
+      font-size: 0.94rem;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        width: min(100% - 24px, 1040px);
+        padding-top: 18px;
+      }
+
+      header,
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        gap: 18px;
+        padding-top: 24px;
+      }
+
+      .app-icon {
+        width: 88px;
+        height: 88px;
+        border-radius: 22px;
+      }
+
+      section {
+        padding: 22px;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <img class="app-icon" src="Voucher%20Wallet/appstore.png" alt="Icône de l'application Voucher Wallet">
+      <div>
+        <p class="eyebrow">Support iOS</p>
+        <h1>Voucher Wallet</h1>
+        <p class="lead">Aide et informations pour l'application qui centralise vos bons d'achat, cartes cadeaux, coupons, codes-barres et PDF dans un portefeuille simple à consulter.</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="highlight" aria-labelledby="start-title">
+        <div>
+          <h2 id="start-title">Guide rapide</h2>
+          <ol class="steps">
+            <li><strong>Ajoutez un bon</strong>Depuis l'accueil, importez un PDF ou saisissez les informations du bon manuellement.</li>
+            <li><strong>Vérifiez les informations</strong>Contrôlez l'enseigne, le montant, la date d'expiration, le numéro du bon et le code PIN si nécessaire.</li>
+            <li><strong>Présentez le code</strong>Ouvrez le détail du bon, puis touchez le code-barres ou le QR code pour l'afficher plus confortablement au moment du passage en caisse.</li>
+            <li><strong>Suivez vos dépenses</strong>Ajoutez les achats réalisés pour garder un solde restant clair et éviter les mauvaises surprises.</li>
+          </ol>
+        </div>
+      </section>
+
+      <div class="grid">
+        <section aria-labelledby="features-title">
+          <h2 id="features-title">Ce que permet l'app</h2>
+          <ul>
+            <li>Ajouter des bons d'achat manuellement ou depuis un PDF.</li>
+            <li>Retrouver rapidement un bon par enseigne, montant ou date d'expiration.</li>
+            <li>Afficher un QR code ou un code-barres quand le bon en contient un.</li>
+            <li>Suivre le solde restant et l'historique des dépenses.</li>
+            <li>Personnaliser les couleurs des cartes avec contrôle de lisibilité.</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="import-title">
+          <h2 id="import-title">Conseils pour l'import PDF</h2>
+          <ul>
+            <li>Utilisez de préférence le PDF original reçu par e-mail ou téléchargé depuis l'espace client de l'enseigne.</li>
+            <li>Si le PDF contient plusieurs bons, relisez chaque fiche avant l'enregistrement.</li>
+            <li>Si une information est mal détectée, corrigez-la avant d'ajouter le bon à votre portefeuille.</li>
+            <li>Gardez le document original jusqu'à ce que le bon ait bien été utilisé.</li>
+          </ul>
+        </section>
+      </div>
+
+      <div class="grid">
+        <section aria-labelledby="faq-title">
+          <h2 id="faq-title">Questions fréquentes</h2>
+          <p><strong>L'import PDF ne trouve pas mon bon.</strong><br>Vérifiez que le PDF contient du texte lisible ou une image nette. Vous pouvez toujours compléter les champs manuellement.</p>
+          <p><strong>Mon code-barres ne passe pas en caisse.</strong><br>Touchez le code dans le détail du bon pour l'afficher en grand, puis vérifiez que le numéro correspond au document original.</p>
+          <p><strong>Puis-je modifier un bon après l'ajout ?</strong><br>Oui, ouvrez le détail du bon puis utilisez l'action de modification.</p>
+          <p><strong>Pourquoi un bon est indiqué comme doublon ?</strong><br>Voucher Wallet compare les numéros de bons déjà enregistrés pour éviter d'ajouter deux fois le même titre.</p>
+        </section>
+
+        <section aria-labelledby="usage-title">
+          <h2 id="usage-title">Bonnes pratiques</h2>
+          <ul>
+            <li>Ajoutez la date d'expiration dès que possible pour repérer les bons à utiliser en priorité.</li>
+            <li>Utilisez les favoris pour garder les bons importants en haut de l'accueil.</li>
+            <li>Notez les conditions utiles dans le champ de note : magasin concerné, usage en ligne, minimum d'achat ou restriction.</li>
+            <li>Mettez à jour le solde après chaque achat pour conserver une vue fiable.</li>
+          </ul>
+        </section>
+      </div>
+
+      <section aria-labelledby="privacy-title">
+        <h2 id="privacy-title">Confidentialité</h2>
+        <p>Voucher Wallet est conçu pour fonctionner avec les frameworks natifs d'iOS. Les informations de vos bons d'achat sont enregistrées localement dans l'application. Les PDF importés servent à extraire les informations nécessaires à l'affichage de vos bons.</p>
+        <p class="note">Pour votre sécurité, ne partagez jamais publiquement une capture contenant un numéro de bon, un code PIN, un QR code ou un code-barres utilisable.</p>
+      </section>
+
+      <section aria-labelledby="contact-title">
+        <h2 id="contact-title">Signaler un problème</h2>
+        <p>Pour signaler un bug ou proposer une amélioration, ouvrez une demande sur le dépôt GitHub du projet. Ajoutez si possible la version d'iOS, le modèle d'iPhone, une description courte du problème et les étapes pour le reproduire.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/jrocher77/voucher-wallet/issues">Ouvrir une demande</a>
+          <a class="button secondary" href="https://github.com/jrocher77/voucher-wallet">Voir le projet</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>© 2026 Voucher Wallet. Page de support hébergée avec GitHub Pages.</p>
+    </footer>
+  </div>
+</body>
+</html>

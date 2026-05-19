@@ -668,7 +668,7 @@ struct ExpenseRow: View {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }
         } catch {
-            print("❌ Erreur lors de la suppression de la dépense: \(error)")
+            debugLog("❌ Erreur lors de la suppression de la dépense: \(error)")
         }
     }
 }

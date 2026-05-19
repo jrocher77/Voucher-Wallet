@@ -63,7 +63,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				VoucherWidgetControl.swift,
 			);
 			target = 3F73705D2F884655003FEEE0 /* VoucherWidgetExtension */;
 		};

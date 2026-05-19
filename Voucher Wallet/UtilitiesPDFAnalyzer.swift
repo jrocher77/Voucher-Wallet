@@ -129,7 +129,7 @@ class PDFAnalyzer {
         
         var result = AnalysisResult()
         
-        print("📄 Analyse d'un PDF avec \(pdfDocument.pageCount) page(s)")
+        debugLog("📄 Analyse d'un PDF avec \(pdfDocument.pageCount) page(s)")
         
         let totalPages = pdfDocument.pageCount
         if let handler = progressHandler {
@@ -145,7 +145,7 @@ class PDFAnalyzer {
                 await MainActor.run { handler(.analyzingPage(current: currentPage, total: totalPages)) }
             }
             
-            print("\n📃 Page \(currentPage)/\(totalPages)")
+            debugLog("\n📃 Page \(currentPage)/\(totalPages)")
             
             // Analyser cette page avec les callbacks de progression
             let pageResult = try await analyzePage(
@@ -162,7 +162,7 @@ class PDFAnalyzer {
             // Si on a détecté un bon complet sur cette page, l'ajouter
             if let voucher = pageResult.detectedVoucher {
                 result.detectedVouchers.append(voucher)
-                print("✅ Bon détecté sur la page \(currentPage): \(voucher.voucherNumber)")
+                debugLog("✅ Bon détecté sur la page \(currentPage): \(voucher.voucherNumber)")
             }
         }
         
@@ -172,26 +172,26 @@ class PDFAnalyzer {
                 await MainActor.run { handler(.extractingData(message: "Extraction des informations...")) }
             }
             
-            print("⚠️ Aucun bon individuel détecté, création d'un résultat global")
+            debugLog("⚠️ Aucun bon individuel détecté, création d'un résultat global")
             
             // Analyser le texte extrait pour trouver des patterns globaux
             let allText = result.detectedText.joined(separator: " ")
             
-            print("📄 Texte extrait du PDF:")
-            print(allText)
-            print("---")
+            debugLog("📄 Texte extrait du PDF:")
+            debugLog(allText)
+            debugLog("---")
             
             // Extraire les informations des codes-barres détectés
             for barcode in result.barcodes {
                 if let payload = barcode.payloadStringValue {
-                    print("🔢 Code-barres détecté: \(payload)")
+                    debugLog("🔢 Code-barres détecté: \(payload)")
                     result.possibleVoucherNumbers.append(payload)
                 }
             }
             
             for qrCode in result.qrCodes {
                 if let payload = qrCode.payloadStringValue {
-                    print("📱 QR Code détecté: \(payload)")
+                    debugLog("📱 QR Code détecté: \(payload)")
                     result.possibleVoucherNumbers.append(payload)
                 }
             }
@@ -207,10 +207,10 @@ class PDFAnalyzer {
             result.storeNameConfidence = storeDetection.confidence
             result.detectionMethod = storeDetection.method
             
-            print("✅ Numéros détectés: \(result.possibleVoucherNumbers)")
-            print("🏪 Enseigne détectée: \(result.detectedStoreName ?? "Aucune") (confiance: \(String(format: "%.0f%%", result.storeNameConfidence * 100)))")
+            debugLog("✅ Numéros détectés: \(result.possibleVoucherNumbers)")
+            debugLog("🏪 Enseigne détectée: \(result.detectedStoreName ?? "Aucune") (confiance: \(String(format: "%.0f%%", result.storeNameConfidence * 100)))")
         } else {
-            print("\n🎉 \(result.detectedVouchers.count) bon(s) détecté(s) au total")
+            debugLog("\n🎉 \(result.detectedVouchers.count) bon(s) détecté(s) au total")
         }
         
         if let handler = progressHandler {
@@ -448,7 +448,7 @@ class PDFAnalyzer {
         }
         
         let uniqueNumbers = Array(Set(numbers))
-        print("🔢 Numéros extraits du texte: \(uniqueNumbers)")
+        debugLog("🔢 Numéros extraits du texte: \(uniqueNumbers)")
         return uniqueNumbers
     }
     
@@ -469,7 +469,7 @@ class PDFAnalyzer {
 
                 let pinCode = nsText.substring(with: range)
                 pins.append(pinCode)
-                print("📍 Code PIN détecté (pattern '\(label)'): \(pinCode)")
+                debugLog("📍 Code PIN détecté (pattern '\(label)'): \(pinCode)")
             }
         }
 
@@ -517,7 +517,7 @@ class PDFAnalyzer {
 
         let uniquePins = Array(Set(pins))
         if !uniquePins.isEmpty {
-            print("🔐 Codes PIN extraits: \(uniquePins)")
+            debugLog("🔐 Codes PIN extraits: \(uniquePins)")
         }
         
         return uniquePins
@@ -648,8 +648,8 @@ class PDFAnalyzer {
                 context: cobrandContext
             )
             
-            print("🏪 Enseigne co-brand détectée: \(cobrandName)")
-            print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+            debugLog("🏪 Enseigne co-brand détectée: \(cobrandName)")
+            debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
             return (cobrandName, confidence, .knownStore)
         }
         
@@ -657,9 +657,9 @@ class PDFAnalyzer {
         var knownStoreCandidates: [(name: String, confidence: Double)] = []
         for storeName in knownStores {
             if containsStoreName(storeName, in: text) {
-                print("🏪 Enseigne connue trouvée: \(storeName)")
+                debugLog("🏪 Enseigne connue trouvée: \(storeName)")
                 if let matchedLine = firstMatchingLine(for: storeName, in: text) {
-                    print("  🔎 Ligne OCR matchée: \(matchedLine)")
+                    debugLog("  🔎 Ligne OCR matchée: \(matchedLine)")
                 }
                 
                 // Enrichir le contexte
@@ -681,7 +681,7 @@ class PDFAnalyzer {
                 }
                 confidence = min(confidence, 1.0)
                 
-                print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+                debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
                 knownStoreCandidates.append((storeName, confidence))
             }
         }
@@ -702,9 +702,9 @@ class PDFAnalyzer {
         let learnedStores = learning.getLearnedStoreNames()
         for storeName in learnedStores {
             if containsStoreName(storeName, in: text) {
-                print("🏪 Enseigne apprise trouvée: \(storeName)")
+                debugLog("🏪 Enseigne apprise trouvée: \(storeName)")
                 if let matchedLine = firstMatchingLine(for: storeName, in: text) {
-                    print("  🔎 Ligne OCR matchée: \(matchedLine)")
+                    debugLog("  🔎 Ligne OCR matchée: \(matchedLine)")
                 }
                 
                 var context = StoreNameLearning.DetectionContext()
@@ -724,7 +724,7 @@ class PDFAnalyzer {
                 }
                 confidence = min(confidence, 1.0)
                 
-                print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+                debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
                 learnedStoreCandidates.append((storeName, confidence))
             }
         }
@@ -754,7 +754,7 @@ class PDFAnalyzer {
         
         for (variant, storeName) in variations {
             if uppercasedText.contains(variant) {
-                print("🏪 Enseigne trouvée (variation): \(storeName)")
+                debugLog("🏪 Enseigne trouvée (variation): \(storeName)")
                 
                 var context = StoreNameLearning.DetectionContext()
                 context.hasMatchingURL = false
@@ -767,18 +767,18 @@ class PDFAnalyzer {
                     context: context
                 )
                 
-                print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+                debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
                 return (storeName, confidence, .knownStore)
             }
         }
         
         // 4. Détection intelligente par heuristiques
         if let (detectedName, method, detectionContext) = detectStoreNameByHeuristics(from: text) {
-            print("🏪 Enseigne détectée par heuristique: \(detectedName)")
+            debugLog("🏪 Enseigne détectée par heuristique: \(detectedName)")
             
             // Vérifier si ce nom a un mapping vers un nom validé
             if let validatedName = learning.findValidatedName(for: detectedName) {
-                print("  🔗 Nom validé trouvé: \(validatedName)")
+                debugLog("  🔗 Nom validé trouvé: \(validatedName)")
                 
                 let confidence = learning.calculateConfidenceScore(
                     for: validatedName,
@@ -786,7 +786,7 @@ class PDFAnalyzer {
                     context: detectionContext
                 )
                 
-                print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+                debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
                 return (validatedName, confidence, .learnedStore)
             }
             
@@ -796,11 +796,11 @@ class PDFAnalyzer {
                 context: detectionContext
             )
             
-            print("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+            debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
             return (detectedName, confidence, method)
         }
         
-        print("❌ Aucune enseigne détectée")
+        debugLog("❌ Aucune enseigne détectée")
         return (nil, 0.0, nil)
     }
     
@@ -862,7 +862,7 @@ class PDFAnalyzer {
                 // Vérifier que ce n'est pas un mot générique
                 let genericWords = ["BON", "CADEAU", "CHEQUE", "CARTE", "VOUCHER", "GIFT", "CARD", "CODE"]
                 if !genericWords.contains(where: { trimmedLine.contains($0) }) {
-                    print("  → Candidat ligne \(index + 1) (majuscules): \(trimmedLine)")
+                    debugLog("  → Candidat ligne \(index + 1) (majuscules): \(trimmedLine)")
                     context.isAllUppercase = true
                     return (formatStoreName(trimmedLine), .uppercaseLine, context)
                 }
@@ -873,7 +873,7 @@ class PDFAnalyzer {
                 let words = trimmedLine.split(separator: " ")
                 // Si c'est 1-3 mots, probablement le nom
                 if words.count <= 3 && words.allSatisfy({ $0.count >= 2 }) {
-                    print("  → Candidat première ligne: \(trimmedLine)")
+                    debugLog("  → Candidat première ligne: \(trimmedLine)")
                     return (formatStoreName(trimmedLine), .firstLine, context)
                 }
             }
@@ -888,7 +888,7 @@ class PDFAnalyzer {
             // Exclure les domaines génériques
             let genericDomains = ["carte", "cadeau", "bon", "voucher", "gift"]
             if !genericDomains.contains(domain.lowercased()) {
-                print("  → Candidat depuis URL: \(domain)")
+                debugLog("  → Candidat depuis URL: \(domain)")
                 context.hasMatchingURL = true
                 return (formatStoreName(domain), .urlExtraction, context)
             }
@@ -898,7 +898,7 @@ class PDFAnalyzer {
         let storePattern = #/(?:Enseigne|Store|Magasin|Boutique)[\s:]+([A-Z][A-Za-z\s]{2,30})/#
         if let match = text.firstMatch(of: storePattern) {
             let storeName = String(match.1).trimmingCharacters(in: .whitespaces)
-            print("  → Candidat depuis label 'Enseigne': \(storeName)")
+            debugLog("  → Candidat depuis label 'Enseigne': \(storeName)")
             return (formatStoreName(storeName), .labeledStore, context)
         }
         
@@ -912,7 +912,7 @@ class PDFAnalyzer {
             // Vérifier que ce n'est pas un mot trop générique
             let genericWords = ["Date", "Code", "Number", "Numero", "Valeur", "Montant", "Total", "Carte", "Bon"]
             if !genericWords.contains(where: { candidate.contains($0) }) && candidate.count >= 4 {
-                print("  → Candidat Title Case: \(candidate)")
+                debugLog("  → Candidat Title Case: \(candidate)")
                 return (candidate, .titleCase, context)
             }
         }

@@ -13,13 +13,13 @@ struct BarcodeGenerator {
     
     /// Génère une image de QR code à partir d'une chaîne
     static func generateQRCode(from string: String) -> UIImage? {
-        print("📱 Génération QR code pour: \(string)")
+        debugLog("📱 Génération QR code pour: \(string)")
         
         let context = CIContext()
         let filter = CIFilter.qrCodeGenerator()
         
         guard let data = string.data(using: .utf8) else {
-            print("❌ Impossible de convertir en UTF-8")
+            debugLog("❌ Impossible de convertir en UTF-8")
             return nil
         }
         
@@ -27,7 +27,7 @@ struct BarcodeGenerator {
         filter.setValue("H", forKey: "inputCorrectionLevel") // Haute correction d'erreur
         
         guard let outputImage = filter.outputImage else {
-            print("❌ Échec de génération du QR code")
+            debugLog("❌ Échec de génération du QR code")
             return nil
         }
         
@@ -37,11 +37,11 @@ struct BarcodeGenerator {
         let scaledImage = outputImage.transformed(by: transform)
         
         guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
-            print("❌ Échec de création de l'image")
+            debugLog("❌ Échec de création de l'image")
             return nil
         }
         
-        print("✅ QR code généré avec succès (taille: \(scaledImage.extent.width) x \(scaledImage.extent.height))")
+        debugLog("✅ QR code généré avec succès (taille: \(scaledImage.extent.width) x \(scaledImage.extent.height))")
         return UIImage(cgImage: cgImage)
     }
     
@@ -54,10 +54,10 @@ struct BarcodeGenerator {
         let cleanString = string.replacingOccurrences(of: " ", with: "")
                                 .replacingOccurrences(of: "-", with: "")
         
-        print("🔢 Génération code-barres pour: \(cleanString)")
+        debugLog("🔢 Génération code-barres pour: \(cleanString)")
         
         guard let data = cleanString.data(using: .ascii) else {
-            print("❌ Impossible de convertir en ASCII: \(cleanString)")
+            debugLog("❌ Impossible de convertir en ASCII: \(cleanString)")
             return nil
         }
         
@@ -65,7 +65,7 @@ struct BarcodeGenerator {
         filter.setValue(0, forKey: "inputQuietSpace") // Espace autour du code
         
         guard let outputImage = filter.outputImage else {
-            print("❌ Échec de génération du code-barres")
+            debugLog("❌ Échec de génération du code-barres")
             return nil
         }
         
@@ -76,11 +76,11 @@ struct BarcodeGenerator {
         let scaledImage = outputImage.transformed(by: transform)
         
         guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
-            print("❌ Échec de création de l'image")
+            debugLog("❌ Échec de création de l'image")
             return nil
         }
         
-        print("✅ Code-barres généré avec succès (taille: \(scaledImage.extent.width) x \(scaledImage.extent.height))")
+        debugLog("✅ Code-barres généré avec succès (taille: \(scaledImage.extent.width) x \(scaledImage.extent.height))")
         return UIImage(cgImage: cgImage)
     }
     

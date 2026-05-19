@@ -19,14 +19,14 @@ struct Voucher_WalletApp: App {
     init() {
         do {
             modelContainer = try SharedModelContainer.create()
-            print("✅ ModelContainer créé avec App Group")
+            debugLog("✅ ModelContainer créé avec App Group")
         } catch {
-            print("❌ Erreur: \(error)")
+            debugLog("❌ Erreur: \(error)")
             fatalError("Could not create ModelContainer: \(error)")
         }
         
         _ = SettingsManager.shared
-        print("🚀 App démarrée - SettingsManager initialisé")
+        debugLog("🚀 App démarrée - SettingsManager initialisé")
     }
     
     var body: some Scene {
@@ -34,7 +34,7 @@ struct Voucher_WalletApp: App {
             ContentView()
                 .environment(urlHandler)
                 .onOpenURL { url in
-                    print("🔵 App received URL: \(url)")
+                    debugLog("🔵 App received URL: \(url)")
                     urlHandler.handleURL(url)
                 }
         }

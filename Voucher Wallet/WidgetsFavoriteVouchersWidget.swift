@@ -29,13 +29,13 @@ struct OpenVoucherIntent: AppIntent {
     }
     
     func perform() async throws -> some IntentResult {
-        print("🎯 OpenVoucherIntent appelé pour: \(voucherID)")
+        debugLog("🎯 OpenVoucherIntent appelé pour: \(voucherID)")
         
         // Stocker l'ID dans UserDefaults partagé
         if let userDefaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) {
             userDefaults.set(voucherID, forKey: "selectedVoucherID")
             userDefaults.synchronize()
-            print("✅ Voucher ID stocké: \(voucherID)")
+            debugLog("✅ Voucher ID stocké: \(voucherID)")
         }
         
         return .result()
@@ -176,7 +176,7 @@ struct FavoriteVouchersProvider: TimelineProvider {
             
             let vouchers = try context.fetch(descriptor)
             
-            print("🔍 Widget: Trouvé \(vouchers.count) cartes favorites")
+            debugLog("🔍 Widget: Trouvé \(vouchers.count) cartes favorites")
             
             let snapshots = vouchers.prefix(4).map { voucher in
                 VoucherSnapshot(
@@ -191,14 +191,14 @@ struct FavoriteVouchersProvider: TimelineProvider {
                 )
             }
             
-            print("📊 Widget: Retourne \(snapshots.count) snapshots")
+            debugLog("📊 Widget: Retourne \(snapshots.count) snapshots")
             for snapshot in snapshots {
-                print("   - \(snapshot.storeName): \(snapshot.remainingBalance)€")
+                debugLog("   - \(snapshot.storeName): \(snapshot.remainingBalance)€")
             }
             
             return snapshots
         } catch {
-            print("❌ Erreur lors de la récupération des vouchers favoris: \(error)")
+            debugLog("❌ Erreur lors de la récupération des vouchers favoris: \(error)")
             return []
         }
     }

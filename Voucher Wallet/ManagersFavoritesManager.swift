@@ -54,7 +54,7 @@ final class FavoritesManager {
         do {
             return try modelContext.fetch(descriptor)
         } catch {
-            print("Erreur lors de la récupération des favoris: \(error)")
+            debugLog("Erreur lors de la récupération des favoris: \(error)")
             return []
         }
     }

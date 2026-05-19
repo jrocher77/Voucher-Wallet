@@ -34,13 +34,13 @@ struct AddExpenseView: View {
         
         // Debug
         if let expense = expense {
-            print("📝 AddExpenseView init en mode ÉDITION")
-            print("   • ID de la dépense: \(expense.id)")
-            print("   • Montant actuel: \(expense.amount)")
-            print("   • Date actuelle: \(expense.date)")
-            print("   • Note actuelle: \(expense.note ?? "nil")")
+            debugLog("📝 AddExpenseView init en mode ÉDITION")
+            debugLog("   • ID de la dépense: \(expense.id)")
+            debugLog("   • Montant actuel: \(expense.amount)")
+            debugLog("   • Date actuelle: \(expense.date)")
+            debugLog("   • Note actuelle: \(expense.note ?? "nil")")
         } else {
-            print("➕ AddExpenseView init en mode CRÉATION")
+            debugLog("➕ AddExpenseView init en mode CRÉATION")
         }
         
         // Formater avec une virgule pour le format français
@@ -192,16 +192,16 @@ struct AddExpenseView: View {
         
         if let existing = existingExpense {
             // Édition
-            print("🔄 Modification de la dépense existante (ID: \(existing.id))")
+            debugLog("🔄 Modification de la dépense existante (ID: \(existing.id))")
             existing.amount = expenseAmount
             existing.date = date
             existing.note = note.isEmpty ? nil : note
-            print("   ✓ Montant mis à jour: \(expenseAmount)")
-            print("   ✓ Date mise à jour: \(date)")
-            print("   ✓ Note mise à jour: \(note.isEmpty ? "nil" : note)")
+            debugLog("   ✓ Montant mis à jour: \(expenseAmount)")
+            debugLog("   ✓ Date mise à jour: \(date)")
+            debugLog("   ✓ Note mise à jour: \(note.isEmpty ? "nil" : note)")
         } else {
             // Création
-            print("➕ Création d'une nouvelle dépense")
+            debugLog("➕ Création d'une nouvelle dépense")
             let expense = Expense(
                 amount: expenseAmount,
                 date: date,
@@ -209,17 +209,17 @@ struct AddExpenseView: View {
             )
             expense.voucher = voucher
             modelContext.insert(expense)
-            print("   ✓ Nouvelle dépense créée (ID: \(expense.id))")
+            debugLog("   ✓ Nouvelle dépense créée (ID: \(expense.id))")
         }
         
         do {
             try modelContext.save()
-            print("💾 Dépense sauvegardée avec succès")
+            debugLog("💾 Dépense sauvegardée avec succès")
             reloadFavoriteWidgetIfNeeded()
             
             // Vérifier si le solde est maintenant à 0
             if voucher.remainingBalance == 0 {
-                print("⚠️ Le solde du bon est maintenant à 0")
+                debugLog("⚠️ Le solde du bon est maintenant à 0")
                 showingDeleteVoucherAlert = true
             } else {
                 dismiss()
@@ -227,7 +227,7 @@ struct AddExpenseView: View {
         } catch {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
-            print("❌ Erreur de sauvegarde: \(error)")
+            debugLog("❌ Erreur de sauvegarde: \(error)")
         }
     }
     
@@ -253,13 +253,13 @@ struct AddExpenseView: View {
         
         do {
             try modelContext.save()
-            print("🗑️ Bon supprimé avec succès")
+            debugLog("🗑️ Bon supprimé avec succès")
             reloadFavoriteWidgetIfNeeded()
             dismiss()
         } catch {
             errorMessage = "Erreur lors de la suppression du bon : \(error.localizedDescription)"
             showingError = true
-            print("❌ Erreur de suppression du bon: \(error)")
+            debugLog("❌ Erreur de suppression du bon: \(error)")
         }
     }
     

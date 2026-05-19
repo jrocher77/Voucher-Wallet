@@ -28,7 +28,7 @@ extension StoreNameLearning {
         textColors[key] = textColorHex
         UserDefaults.standard.set(textColors, forKey: Self.textColorKey)
         
-        print("🎨 Couleur de texte apprise pour \(storeName): \(textColorHex)")
+        debugLog("🎨 Couleur de texte apprise pour \(storeName): \(textColorHex)")
     }
     
     /// Récupère la couleur de texte apprise pour une enseigne

@@ -426,7 +426,7 @@ struct ContentView: View {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }
         } catch {
-            print("❌ Erreur lors de la suppression du bon: \(error)")
+            debugLog("❌ Erreur lors de la suppression du bon: \(error)")
         }
 
         voucherToDelete = nil
@@ -444,7 +444,7 @@ struct ContentView: View {
         do {
             try modelContext.save()
         } catch {
-            print("❌ Erreur lors de l'initialisation du tri: \(error)")
+            debugLog("❌ Erreur lors de l'initialisation du tri: \(error)")
         }
     }
 
@@ -543,7 +543,7 @@ struct ContentView: View {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }
         } catch {
-            print("❌ Erreur lors de la sauvegarde du tri: \(error)")
+            debugLog("❌ Erreur lors de la sauvegarde du tri: \(error)")
         }
     }
     

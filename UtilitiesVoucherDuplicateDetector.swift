@@ -37,7 +37,7 @@ struct VoucherDuplicateDetector {
         }
         
         if !duplicateIds.isEmpty {
-            print("⚠️ \(duplicateIds.count) bon(s) en double détecté(s)")
+            debugLog("⚠️ \(duplicateIds.count) bon(s) en double détecté(s)")
         }
         
         return duplicateIds

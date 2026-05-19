@@ -19,15 +19,15 @@ struct SettingsMonitorModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onAppear {
-                print("✨ SettingsMonitorModifier - onAppear")
+                debugLog("✨ SettingsMonitorModifier - onAppear")
                 checkForOnboarding()
                 checkForReset()
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
-                print("🔄 ScenePhase changé: \(oldPhase) → \(newPhase)")
+                debugLog("🔄 ScenePhase changé: \(oldPhase) → \(newPhase)")
                 
                 if newPhase == .active {
-                    print("🔄 App devient active - Vérification des réglages...")
+                    debugLog("🔄 App devient active - Vérification des réglages...")
                     checkForOnboarding()
                     checkForReset()
                 }
@@ -63,10 +63,10 @@ struct SettingsMonitorModifier: ViewModifier {
         
         // Vérifier si une réinitialisation a été demandée
         let resetRequested = UserDefaults.standard.bool(forKey: "reset_learning_requested")
-        print("📊 Reset demandé ? \(resetRequested)")
+        debugLog("📊 Reset demandé ? \(resetRequested)")
         
         if resetRequested {
-            print("⚠️ Affichage de l'alerte de réinitialisation")
+            debugLog("⚠️ Affichage de l'alerte de réinitialisation")
             showingResetConfirmation = true
         }
     }
@@ -75,7 +75,7 @@ struct SettingsMonitorModifier: ViewModifier {
         guard !showingOnboarding else { return }
 
         if SettingsManager.shared.shouldShowOnboarding() {
-            print("👋 Affichage de la démonstration")
+            debugLog("👋 Affichage de la démonstration")
             showingOnboarding = true
         }
     }

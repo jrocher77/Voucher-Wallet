@@ -15,14 +15,14 @@ struct WidgetReloader {
     /// Recharge tous les widgets de l'application
     static func reloadAllWidgets() {
         WidgetCenter.shared.reloadAllTimelines()
-        print("♻️ Tous les widgets ont été rechargés")
+        debugLog("♻️ Tous les widgets ont été rechargés")
     }
     
     /// Recharge un widget spécifique
     /// - Parameter kind: L'identifiant du widget à recharger
     static func reloadWidget(kind: String) {
         WidgetCenter.shared.reloadTimelines(ofKind: kind)
-        print("♻️ Widget '\(kind)' rechargé")
+        debugLog("♻️ Widget '\(kind)' rechargé")
     }
     
     /// Recharge le widget des favoris

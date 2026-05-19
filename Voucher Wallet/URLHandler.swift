@@ -16,7 +16,7 @@ class URLHandler {
     var selectedVoucherID: UUID?
     
     func handleURL(_ url: URL) {
-        print("🟡 URLHandler - Handling URL: \(url)")
+        debugLog("🟡 URLHandler - Handling URL: \(url)")
         
         // Vérifier si c'est un deep link vers un voucher
         // Format: voucherwallet://voucher/{UUID}
@@ -27,7 +27,7 @@ class URLHandler {
         
         // Sinon, vérifier si c'est un PDF
         guard url.pathExtension.lowercased() == "pdf" else {
-            print("❌ Not a PDF or valid deep link")
+            debugLog("❌ Not a PDF or valid deep link")
             return
         }
         
@@ -40,11 +40,11 @@ class URLHandler {
         
         guard let uuidString = components.first,
               let voucherID = UUID(uuidString: uuidString) else {
-            print("❌ Invalid voucher URL format")
+            debugLog("❌ Invalid voucher URL format")
             return
         }
         
-        print("✅ Opening voucher with ID: \(voucherID)")
+        debugLog("✅ Opening voucher with ID: \(voucherID)")
         
         DispatchQueue.main.async {
             self.selectedVoucherID = voucherID
@@ -54,15 +54,15 @@ class URLHandler {
     private func handlePDFURL(_ url: URL) {
         do {
             let data = try readPDFData(from: url)
-            print("✅ PDF read successfully: \(data.count) bytes")
+            debugLog("✅ PDF read successfully: \(data.count) bytes")
 
             DispatchQueue.main.async {
                 self.pdfData = data
                 self.shouldShowImport = true
-                print("✅ URLHandler - Sheet should show now")
+                debugLog("✅ URLHandler - Sheet should show now")
             }
         } catch {
-            print("❌ Error reading PDF: \(error)")
+            debugLog("❌ Error reading PDF: \(error)")
         }
     }
 

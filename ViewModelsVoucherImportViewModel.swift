@@ -75,7 +75,7 @@ class VoucherImportViewModel {
         isAnalyzing = true
         
         do {
-            print("🔍 Début de l'analyse PDF...")
+            debugLog("🔍 Début de l'analyse PDF...")
             
             let result = try await PDFAnalyzer.analyzePDF(data: pdfData) { progress in
                 Task { @MainActor in
@@ -92,15 +92,15 @@ class VoucherImportViewModel {
                 self.analysisResult = result
                 self.detectedVouchers = result.detectedVouchers
                 
-                print("📊 Analyse terminée:")
-                print("  - Bons détectés: \(result.detectedVouchers.count)")
-                print("  - Enseigne: \(result.detectedStoreName ?? "non détectée")")
+                debugLog("📊 Analyse terminée:")
+                debugLog("  - Bons détectés: \(result.detectedVouchers.count)")
+                debugLog("  - Enseigne: \(result.detectedStoreName ?? "non détectée")")
                 
                 self.isAnalyzing = false
             }
         } catch {
             await MainActor.run {
-                print("❌ Erreur d'analyse: \(error.localizedDescription)")
+                debugLog("❌ Erreur d'analyse: \(error.localizedDescription)")
                 self.errorMessage = "Erreur lors de l'analyse : \(error.localizedDescription)"
                 self.showingError = true
                 self.isAnalyzing = false
@@ -175,7 +175,7 @@ class VoucherImportViewModel {
         }
         globalTextColor = Color(hex: suggestedTextColor)
         
-        print("🎨 Couleurs initialisées: fond=\(globalCardColor.toHex()), texte=\(globalTextColor.toHex())")
+        debugLog("🎨 Couleurs initialisées: fond=\(globalCardColor.toHex()), texte=\(globalTextColor.toHex())")
     }
     
     /// Ajuste automatiquement la couleur de texte si nécessaire
@@ -244,7 +244,7 @@ class VoucherImportViewModel {
         }
         
         try modelContext.save()
-        print("✅ \(importedCount) bon(s) importé(s)")
+        debugLog("✅ \(importedCount) bon(s) importé(s)")
         
         return importedCount
     }
@@ -307,7 +307,7 @@ class VoucherImportViewModel {
         StoreNameLearning.shared.learnTextColor(textColorHex, for: storeName)
         
         try modelContext.save()
-        print("✅ Bon importé: \(storeName)")
+        debugLog("✅ Bon importé: \(storeName)")
     }
 
     private func getNextSortOrder(in modelContext: ModelContext) -> Int {
@@ -319,7 +319,7 @@ class VoucherImportViewModel {
             let vouchers = try modelContext.fetch(descriptor)
             return (vouchers.first?.sortOrder ?? -1) + 1
         } catch {
-            print("⚠️ Impossible de calculer le prochain sortOrder: \(error)")
+            debugLog("⚠️ Impossible de calculer le prochain sortOrder: \(error)")
             return 0
         }
     }

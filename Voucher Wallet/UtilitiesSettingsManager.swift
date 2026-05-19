@@ -107,7 +107,7 @@ class SettingsManager: ObservableObject {
             UserDefaults.standard.set("-", forKey: topStore3Key)
         }
         
-        print("📊 Statistiques mises à jour dans les Réglages iOS")
+        debugLog("📊 Statistiques mises à jour dans les Réglages iOS")
     }
     
     private func countColorPreferences() -> Int {
@@ -133,10 +133,10 @@ class SettingsManager: ObservableObject {
     /// Cette méthode doit être appelée quand l'app devient active
     func checkForResetRequest() {
         let resetRequested = UserDefaults.standard.bool(forKey: resetRequestedKey)
-        print("🔍 Vérification reset: \(resetRequested)")
+        debugLog("🔍 Vérification reset: \(resetRequested)")
         
         if resetRequested {
-            print("✅ Reset demandé, déclenchement de l'alerte")
+            debugLog("✅ Reset demandé, déclenchement de l'alerte")
             // Déclencher l'alerte de confirmation
             DispatchQueue.main.async {
                 self.shouldShowResetConfirmation = true
@@ -154,12 +154,12 @@ class SettingsManager: ObservableObject {
         // Mettre à jour les statistiques (elles seront à zéro)
         updateSettingsStatistics()
         
-        print("✅ Réinitialisation effectuée depuis les Réglages iOS")
+        debugLog("✅ Réinitialisation effectuée depuis les Réglages iOS")
     }
     
     /// Annule la demande de réinitialisation (remet le toggle à OFF)
     func cancelReset() {
-        print("❌ Réinitialisation annulée")
+        debugLog("❌ Réinitialisation annulée")
         UserDefaults.standard.set(false, forKey: resetRequestedKey)
     }
 

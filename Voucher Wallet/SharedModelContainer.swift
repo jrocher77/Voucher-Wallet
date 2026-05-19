@@ -49,7 +49,7 @@ enum SharedModelContainer {
                 throw error
             }
 
-            print("⚠️ Échec du chargement SwiftData, tentative de récupération automatique...")
+            debugLog("⚠️ Échec du chargement SwiftData, tentative de récupération automatique...")
             try resetSharedPersistentStoreFiles()
             return try ModelContainer(for: schema, configurations: [configuration])
         }

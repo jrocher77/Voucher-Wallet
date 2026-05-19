@@ -32,7 +32,7 @@ class StoreNameLearning {
         if !learnedStores.contains(storeName) {
             learnedStores.append(storeName)
             saveLearnedStoreNames(learnedStores)
-            print("📚 Enseigne apprise: \(storeName)")
+            debugLog("📚 Enseigne apprise: \(storeName)")
         }
         
         // Incrémenter le compteur pour améliorer le scoring
@@ -41,7 +41,7 @@ class StoreNameLearning {
         // Si le nom détecté était différent, créer une association
         if let detected = detectedName, detected != storeName {
             saveStoreNameMapping(from: detected, to: storeName)
-            print("🔗 Association créée: \"\(detected)\" → \"\(storeName)\"")
+            debugLog("🔗 Association créée: \"\(detected)\" → \"\(storeName)\"")
         }
         
         // Mettre à jour les statistiques dans les Réglages iOS
@@ -207,7 +207,7 @@ class StoreNameLearning {
         UserDefaults.standard.removeObject(forKey: storeCountKey)
         UserDefaults.standard.removeObject(forKey: mappingKey)
         UserDefaults.standard.removeObject(forKey: storeColorsKey)
-        print("🗑️ Données d'apprentissage réinitialisées")
+        debugLog("🗑️ Données d'apprentissage réinitialisées")
     }
     
     // MARK: - Apprentissage des couleurs
@@ -234,7 +234,7 @@ class StoreNameLearning {
         storeColors[normalizedName] = colorHistory
         saveStoreColors(storeColors)
         
-        print("🎨 Couleur apprise: \(colorHex) pour \(storeName) (utilisé \(colorHistory[colorHex]!) fois)")
+        debugLog("🎨 Couleur apprise: \(colorHex) pour \(storeName) (utilisé \(colorHistory[colorHex]!) fois)")
         
         // Mettre à jour les statistiques dans les Réglages iOS
         updateSettingsStatistics()
@@ -258,7 +258,7 @@ class StoreNameLearning {
         // Ne retourner que si la couleur a été utilisée au moins 2 fois
         // (pour éviter les choix accidentels)
         if let (color, count) = mostUsedColor, count >= 2 {
-            print("🎨 Couleur préférée pour \(storeName): \(color) (\(count) utilisations)")
+            debugLog("🎨 Couleur préférée pour \(storeName): \(color) (\(count) utilisations)")
             return color
         }
         

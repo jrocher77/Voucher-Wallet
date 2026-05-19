@@ -382,7 +382,7 @@ struct AddVoucherView: View {
         let suggestedTextColor = StorePreset.getTextColor(for: storeName, backgroundHex: selectedColor.toHex())
         selectedTextColor = Color(hex: suggestedTextColor)
         
-        print("✅ Bon pré-rempli: \(storeName) - Confiance: \(Int(voucher.storeNameConfidence * 100))%")
+        debugLog("✅ Bon pré-rempli: \(storeName) - Confiance: \(Int(voucher.storeNameConfidence * 100))%")
     }
     
     private func populateFormWithSuggestions(_ result: PDFAnalyzer.AnalysisResult) {

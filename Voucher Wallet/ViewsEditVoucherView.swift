@@ -100,7 +100,7 @@ struct EditVoucherView: View {
                             if areColorsTooSimilar(newValue, selectedTextColor) {
                                 let suggestedTextColor = StoreNameLearning.shared.suggestTextColor(for: newValue.toHex())
                                 selectedTextColor = Color(hex: suggestedTextColor)
-                                print("💡 Suggestion automatique de couleur de texte: \(suggestedTextColor)")
+                                debugLog("💡 Suggestion automatique de couleur de texte: \(suggestedTextColor)")
                             }
                         }
                     

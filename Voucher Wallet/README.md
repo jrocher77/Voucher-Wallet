@@ -50,6 +50,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 ### ⚙️ Réglages iOS
 - **Statistiques d'apprentissage** : Consultez les données apprises
 - **Réinitialisation** : Effacez les préférences apprises
+- **Démonstration** : Relancez l'écran de présentation au prochain lancement
 - **Synchronisation** : Mise à jour automatique entre l'app et les Réglages
 - **À propos** : Version et informations de l'app
 
@@ -115,6 +116,8 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
   - `learnedTextColors` : Dictionnaire `[String: String]`
   - `learnedStoreMappings` : Dictionnaire `[String: String]`
   - `reset_learning_requested` : Toggle de réinitialisation
+  - `has_seen_onboarding` : Indique si la démonstration initiale a déjà été vue
+  - `show_onboarding_next_launch` : Toggle pour relancer la démonstration
 
 ---
 

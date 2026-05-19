@@ -21,6 +21,8 @@ class SettingsManager: ObservableObject {
     private let topStore2Key = "top_store_2"
     private let topStore3Key = "top_store_3"
     private let resetRequestedKey = "reset_learning_requested"
+    private let hasSeenOnboardingKey = "has_seen_onboarding"
+    private let showOnboardingNextLaunchKey = "show_onboarding_next_launch"
     
     @Published var shouldShowResetConfirmation = false
     
@@ -59,6 +61,8 @@ class SettingsManager: ObservableObject {
             topStore2Key: "-",
             topStore3Key: "-",
             resetRequestedKey: false,
+            hasSeenOnboardingKey: false,
+            showOnboardingNextLaunchKey: false,
             "version_preference": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
         ]
         
@@ -157,6 +161,21 @@ class SettingsManager: ObservableObject {
     func cancelReset() {
         print("❌ Réinitialisation annulée")
         UserDefaults.standard.set(false, forKey: resetRequestedKey)
+    }
+
+    // MARK: - Onboarding
+
+    /// Indique si l'écran de démonstration doit être affiché.
+    func shouldShowOnboarding() -> Bool {
+        let hasSeenOnboarding = UserDefaults.standard.bool(forKey: hasSeenOnboardingKey)
+        let showOnboardingNextLaunch = UserDefaults.standard.bool(forKey: showOnboardingNextLaunchKey)
+        return !hasSeenOnboarding || showOnboardingNextLaunch
+    }
+
+    /// Marque la démonstration comme vue et remet le toggle des Réglages à OFF.
+    func markOnboardingAsSeen() {
+        UserDefaults.standard.set(true, forKey: hasSeenOnboardingKey)
+        UserDefaults.standard.set(false, forKey: showOnboardingNextLaunchKey)
     }
 }
 

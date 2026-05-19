@@ -26,24 +26,24 @@
             <string>Statistics</string>
         </dict>
         
-        <!-- Section : Gestion des données -->
+        <!-- Section : Démonstration -->
         <dict>
             <key>Type</key>
             <string>PSGroupSpecifier</string>
             <key>Title</key>
-            <string>Gestion des données</string>
+            <string>Démonstration</string>
             <key>FooterText</key>
-            <string>Activez cette option pour réinitialiser toutes les données d'apprentissage. Une confirmation vous sera demandée lors de la prochaine ouverture de l'app. Vos bons ne seront pas affectés.</string>
+            <string>Activez cette option pour revoir l'écran de présentation au prochain lancement de l'app.</string>
         </dict>
         
-        <!-- Toggle pour demander la réinitialisation -->
+        <!-- Toggle pour relancer l'onboarding -->
         <dict>
             <key>Type</key>
             <string>PSToggleSwitchSpecifier</string>
             <key>Title</key>
-            <string>Demande de réinitialisation</string>
+            <string>Afficher la démonstration</string>
             <key>Key</key>
-            <string>reset_learning_requested</string>
+            <string>show_onboarding_next_launch</string>
             <key>DefaultValue</key>
             <false/>
         </dict>
@@ -70,4 +70,3 @@
     </array>
 </dict>
 </plist>
-

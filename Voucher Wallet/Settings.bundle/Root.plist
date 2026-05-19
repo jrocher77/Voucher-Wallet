@@ -47,6 +47,16 @@
             <key>DefaultValue</key>
             <false/>
         </dict>
+
+        <!-- Section : Support -->
+        <dict>
+            <key>Type</key>
+            <string>PSGroupSpecifier</string>
+            <key>Title</key>
+            <string>Support</string>
+            <key>FooterText</key>
+            <string>Page de support : https://jrocher77.github.io/Voucher-Wallet/</string>
+        </dict>
         
         <!-- Section : À propos -->
         <dict>

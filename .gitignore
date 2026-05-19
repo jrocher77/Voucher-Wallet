@@ -1,1 +1,18 @@
 AGENTS.md
+
+# macOS
+.DS_Store
+
+# Xcode user-local state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Xcode build outputs
+DerivedData/
+build/
+*.moved-aside
+*.xcarchive
+
+# Swift Package Manager / Swift build cache
+.build/

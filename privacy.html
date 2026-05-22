@@ -205,7 +205,7 @@
     <main>
       <section class="highlight" aria-labelledby="summary-title">
         <h2 id="summary-title">Résumé</h2>
-        <p>Voucher Wallet ne crée pas de compte utilisateur, ne suit pas votre activité à des fins publicitaires et ne vend pas vos données. Les informations que vous ajoutez dans l'application restent stockées localement sur votre appareil et, le cas échéant, dans l'espace partagé iOS utilisé par le widget de l'application.</p>
+        <p>Voucher Wallet ne crée pas de compte utilisateur, ne suit pas votre activité à des fins publicitaires et ne vend pas vos données. Les informations que vous ajoutez dans l'application restent stockées sur votre appareil et peuvent être synchronisées avec votre espace iCloud privé afin de retrouver vos bons sur vos autres appareils.</p>
       </section>
 
       <section aria-labelledby="data-title">
@@ -228,7 +228,8 @@
 
       <section aria-labelledby="storage-title">
         <h2 id="storage-title">Stockage et partage</h2>
-        <p>Les données de l'application sont stockées localement avec les mécanismes de persistance d'iOS. Certaines préférences et informations nécessaires au widget peuvent être conservées dans UserDefaults et dans l'App Group de l'application, afin que l'application principale et le widget puissent afficher les mêmes favoris.</p>
+        <p>Les données de l'application sont stockées avec les mécanismes de persistance d'iOS et synchronisées, lorsque iCloud est disponible sur l'appareil, dans le conteneur CloudKit privé associé à Voucher Wallet. Cette synchronisation permet de récupérer vos bons sur vos appareils connectés au même compte iCloud.</p>
+        <p>Certaines préférences et informations nécessaires au widget peuvent être conservées dans UserDefaults et dans l'App Group de l'application, afin que l'application principale et le widget puissent afficher les mêmes favoris.</p>
         <p>Voucher Wallet ne transmet pas vos informations personnelles à des tiers et n'utilise pas de service publicitaire ou d'analyse comportementale.</p>
       </section>
 
@@ -240,7 +241,7 @@
 
       <section aria-labelledby="control-title">
         <h2 id="control-title">Contrôle de vos données</h2>
-        <p>Vous pouvez modifier ou supprimer vos bons directement dans l'application. La suppression de l'application depuis iOS supprime également les données locales associées à l'application, sous réserve du comportement normal des sauvegardes iCloud ou des sauvegardes de l'appareil gérées par Apple.</p>
+        <p>Vous pouvez modifier ou supprimer vos bons directement dans l'application. Les modifications sont synchronisées avec iCloud lorsque le service est disponible. La suppression de l'application depuis iOS supprime les données locales associées à l'application, sous réserve du comportement normal d'iCloud, de CloudKit et des sauvegardes de l'appareil gérées par Apple.</p>
       </section>
 
       <section aria-labelledby="changes-title">
@@ -258,7 +259,7 @@
     </main>
 
     <footer>
-      <p>Dernière mise à jour : 20 mai 2026. <a href="index.html">Retour au support</a></p>
+      <p>Dernière mise à jour : 21 mai 2026. <a href="index.html">Retour au support</a></p>
     </footer>
   </div>
 </body>

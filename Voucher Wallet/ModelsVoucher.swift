@@ -10,22 +10,22 @@ import SwiftData
 
 @Model
 final class Voucher {
-    @Attribute(.unique) var id: UUID
-    var storeName: String
+    var id: UUID = UUID()
+    var storeName: String = ""
     var amount: Double?
-    var voucherNumber: String
+    var voucherNumber: String = ""
     var pinCode: String?
-    var codeType: CodeType
-    var codeImageData: Data?
+    var codeType: CodeType = CodeType.barcode
+    @Attribute(.externalStorage) var codeImageData: Data?
     var expirationDate: Date?
-    var dateAdded: Date
+    var dateAdded: Date = Date()
     var sortOrder: Int = 0
-    var pdfData: Data?
-    var storeColor: String // Hex color code
-    var textColor: String // Hex color code for text
+    @Attribute(.externalStorage) var pdfData: Data?
+    var storeColor: String = "#007AFF" // Hex color code
+    var textColor: String = "#FFFFFF" // Hex color code for text
     
     @Relationship(deleteRule: .cascade, inverse: \Expense.voucher)
-    var expenses: [Expense] = []
+    var expenses: [Expense]?
     
     var isFavorite: Bool = false
     
@@ -33,14 +33,19 @@ final class Voucher {
     @Transient
     var remainingBalance: Double {
         guard let initialAmount = amount else { return 0 }
-        let totalExpenses = expenses.reduce(0) { $0 + $1.amount }
+        let totalExpenses = expensesList.reduce(0) { $0 + $1.amount }
         return initialAmount - totalExpenses
     }
     
     // Propriété calculée pour le total des dépenses
     @Transient
     var totalExpenses: Double {
-        expenses.reduce(0) { $0 + $1.amount }
+        expensesList.reduce(0) { $0 + $1.amount }
+    }
+
+    @Transient
+    var expensesList: [Expense] {
+        expenses ?? []
     }
     
     init(

@@ -411,13 +411,13 @@ struct VoucherDetailView: View {
     private var balanceSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Historique des dépenses
-            if !voucher.expenses.isEmpty {
+            if !voucher.expensesList.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Historique")
                         .font(.headline)
                         .padding(.horizontal)
                     
-                    ForEach(voucher.expenses.sorted(by: { $0.date > $1.date })) { expense in
+                    ForEach(voucher.expensesList.sorted(by: { $0.date > $1.date })) { expense in
                         ExpenseRow(expense: expense, modelContext: modelContext) {
                             expenseToPresent = .edit(expense)
                         }

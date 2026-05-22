@@ -162,8 +162,8 @@ struct FavoriteVouchersProvider: TimelineProvider {
     // Fonction pour récupérer les vouchers favoris depuis SwiftData
     private func fetchFavoriteVouchers() -> [VoucherSnapshot] {
         do {
-            // Utiliser le container partagé via App Group
-            let container = try SharedModelContainer.create()
+            // Le widget lit le store partagé localement. L'app principale se charge de la synchronisation iCloud.
+            let container = try SharedModelContainer.create(enablesCloudSync: false)
             let context = ModelContext(container)
             
             let descriptor = FetchDescriptor<Voucher>(

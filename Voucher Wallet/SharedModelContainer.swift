@@ -20,8 +20,9 @@ enum SharedModelContainer {
     
     /// Crée un ModelContainer partagé entre l'app et les widgets
     /// - Parameter inMemory: Si true, utilise un stockage en mémoire (pour les previews)
+    /// - Parameter enablesCloudSync: Si true, active la synchronisation iCloud pour l'app principale
     /// - Returns: Un ModelContainer configuré
-    static func create(inMemory: Bool = false) throws -> ModelContainer {
+    static func create(inMemory: Bool = false, enablesCloudSync: Bool = true) throws -> ModelContainer {
         let schema = Schema([Voucher.self, Expense.self])
         
         let configuration: ModelConfiguration
@@ -38,7 +39,7 @@ enum SharedModelContainer {
                 schema: schema,
                 isStoredInMemoryOnly: false,
                 groupContainer: .identifier(appGroupIdentifier),
-                cloudKitDatabase: .none
+                cloudKitDatabase: enablesCloudSync ? .automatic : .none
             )
         }
 

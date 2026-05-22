@@ -54,6 +54,11 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 - **Synchronisation** : Mise à jour automatique entre l'app et les Réglages
 - **À propos** : Version et informations de l'app
 
+### ☁️ Synchronisation iCloud
+- **CloudKit privé** : Synchronisation automatique des bons et dépenses entre les appareils connectés au même compte iCloud
+- **Récupération après changement d'iPhone** : Les données SwiftData sont restaurées via iCloud quand l'application est installée sur un nouvel appareil
+- **Widget compatible** : La cible widget utilise le même conteneur CloudKit et le même App Group que l'application principale
+
 ---
 
 ## 🏗️ Architecture
@@ -110,7 +115,8 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
 ```
 
 ### Stockage
-- **SwiftData** : Modèles de données persistants
+- **SwiftData + CloudKit** : Modèles de données persistants synchronisés via le conteneur iCloud privé de l'utilisateur
+- **App Group** : Partage du store SwiftData entre l'application et le widget
 - **UserDefaults** : Préférences d'apprentissage
   - `learnedStoreColors` : Dictionnaire `[String: String]`
   - `learnedTextColors` : Dictionnaire `[String: String]`
@@ -408,7 +414,7 @@ Les logs suivants sont générés :
 - [ ] Plus de préréglages de couleurs
 
 ### Moyen Terme
-- [ ] Synchronisation iCloud
+- [x] Synchronisation iCloud
 - [ ] Mode à contraste élevé avancé
 - [ ] Thèmes prédéfinis (luxe, sport, tech)
 - [ ] Détection automatique de logo (Vision)

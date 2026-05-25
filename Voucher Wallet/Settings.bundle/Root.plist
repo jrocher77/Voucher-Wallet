@@ -75,7 +75,7 @@
             <key>Key</key>
             <string>version_preference</string>
             <key>DefaultValue</key>
-            <string>1.0</string>
+            <string>1.1.1</string>
         </dict>
     </array>
 </dict>

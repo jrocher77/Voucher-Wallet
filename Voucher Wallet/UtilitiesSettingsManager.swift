@@ -54,6 +54,7 @@ class SettingsManager: ObservableObject {
     // MARK: - Enregistrement des valeurs par défaut
     
     private func registerDefaultSettings() {
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.1.1"
         let defaults: [String: Any] = [
             learnedStoresCountKey: 0,
             colorPreferencesCountKey: 0,
@@ -63,10 +64,11 @@ class SettingsManager: ObservableObject {
             resetRequestedKey: false,
             hasSeenOnboardingKey: false,
             showOnboardingNextLaunchKey: false,
-            "version_preference": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+            "version_preference": appVersion
         ]
         
         UserDefaults.standard.register(defaults: defaults)
+        UserDefaults.standard.set(appVersion, forKey: "version_preference")
     }
     
     // MARK: - Mise à jour des statistiques

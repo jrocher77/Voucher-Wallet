@@ -485,7 +485,7 @@ Ce projet est un exemple éducatif.
 
 **Développé par** : JEREMY  
 **Date de création** : Avril 2026  
-**Version actuelle** : 1.1.0  
+**Version actuelle** : 1.1.1  
 **Statut** : ✅ Production Ready
 
 ---

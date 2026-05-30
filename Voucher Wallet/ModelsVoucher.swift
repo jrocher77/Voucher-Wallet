@@ -1,54 +1,98 @@
 //
-//  Voucher.swift
+//  ModelsVoucher.swift
 //  Voucher Wallet
 //
-//  Created by JEREMY on 02/04/2026.
-//
 
+import CoreData
 import Foundation
-import SwiftData
 
-@Model
-final class Voucher {
-    var id: UUID = UUID()
-    var storeName: String = ""
-    var amount: Double?
-    var voucherNumber: String = ""
-    var pinCode: String?
-    var codeType: CodeType = CodeType.barcode
-    @Attribute(.externalStorage) var codeImageData: Data?
-    var expirationDate: Date?
-    var dateAdded: Date = Date()
-    var sortOrder: Int = 0
-    @Attribute(.externalStorage) var pdfData: Data?
-    var storeColor: String = "#007AFF" // Hex color code
-    var textColor: String = "#FFFFFF" // Hex color code for text
-    
-    @Relationship(deleteRule: .cascade, inverse: \Expense.voucher)
-    var expenses: [Expense]?
-    
-    var isFavorite: Bool = false
-    
-    // Propriété calculée pour le solde restant
-    @Transient
+nonisolated enum VoucherSharingRole {
+    case none
+    case owner
+    case recipient
+}
+
+@objc(Voucher)
+final class Voucher: NSManagedObject, Identifiable {
+    @NSManaged var id: UUID
+    @NSManaged var storeName: String
+    @NSManaged var amountValue: NSNumber?
+    @NSManaged var voucherNumber: String
+    @NSManaged var pinCode: String?
+    @NSManaged var codeTypeValue: String
+    @NSManaged var codeImageData: Data?
+    @NSManaged var expirationDate: Date?
+    @NSManaged var dateAdded: Date
+    @NSManaged var pdfData: Data?
+    @NSManaged var storeColor: String
+    @NSManaged var textColor: String
+    @NSManaged var spentBeforeCurrentShare: Double
+    @NSManaged var activeSharingPeriodID: UUID?
+    @NSManaged var sharingStartedAt: Date?
+    @NSManaged var expenses: Set<Expense>?
+
+    var amount: Double? {
+        get { amountValue?.doubleValue }
+        set { amountValue = newValue.map(NSNumber.init(value:)) }
+    }
+
+    var codeType: CodeType {
+        get { CodeType(rawValue: codeTypeValue) ?? .barcode }
+        set { codeTypeValue = newValue.rawValue }
+    }
+
+    var activeExpensesList: [Expense] {
+        Array(expenses ?? [])
+    }
+
+    var expensesList: [Expense] {
+        activeExpensesList + archivedExpenses
+    }
+
     var remainingBalance: Double {
         guard let initialAmount = amount else { return 0 }
-        let totalExpenses = expensesList.reduce(0) { $0 + $1.amount }
-        return initialAmount - totalExpenses
-    }
-    
-    // Propriété calculée pour le total des dépenses
-    @Transient
-    var totalExpenses: Double {
-        expensesList.reduce(0) { $0 + $1.amount }
+        return initialAmount - spentBeforeCurrentShare - activeExpensesList.reduce(0) { $0 + $1.amount }
     }
 
-    @Transient
-    var expensesList: [Expense] {
-        expenses ?? []
+    var totalExpenses: Double {
+        guard let initialAmount = amount else {
+            return expensesList.reduce(0) { $0 + $1.amount }
+        }
+        return initialAmount - remainingBalance
     }
-    
-    init(
+
+    var sharingRole: VoucherSharingRole {
+        guard managedObjectContext != nil,
+              let store = objectID.persistentStore else {
+            return sharingStartedAt == nil ? .none : .owner
+        }
+        if store.configurationName == SharedModelContainer.sharedConfigurationName {
+            return .recipient
+        }
+        return sharingStartedAt == nil ? .none : .owner
+    }
+
+    var isReceivedShare: Bool { sharingRole == .recipient }
+    var isInActiveShare: Bool { sharingRole != .none }
+
+    var isFavorite: Bool {
+        get { preference?.isFavorite ?? false }
+        set {
+            let preference = preference ?? createPreference()
+            preference?.isFavorite = newValue
+        }
+    }
+
+    var sortOrder: Int {
+        get { Int(preference?.sortOrder ?? 0) }
+        set {
+            let preference = preference ?? createPreference()
+            preference?.sortOrder = Int64(newValue)
+        }
+    }
+
+    convenience init(
+        context: NSManagedObjectContext,
         id: UUID = UUID(),
         storeName: String,
         amount: Double? = nil,
@@ -63,6 +107,8 @@ final class Voucher {
         storeColor: String = "#007AFF",
         textColor: String = "#FFFFFF"
     ) {
+        self.init(context: context)
+        SharedModelContainer.assignToPrivateStore(self, in: context)
         self.id = id
         self.storeName = storeName
         self.amount = amount
@@ -72,10 +118,57 @@ final class Voucher {
         self.codeImageData = codeImageData
         self.expirationDate = expirationDate
         self.dateAdded = dateAdded
-        self.sortOrder = sortOrder
         self.pdfData = pdfData
         self.storeColor = storeColor
         self.textColor = textColor
+        self.spentBeforeCurrentShare = 0
+        self.sortOrder = sortOrder
+    }
+
+    private var preference: PersonalVoucherPreference? {
+        guard let context = managedObjectContext else { return nil }
+        let request = PersonalVoucherPreference.fetchRequest()
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "voucherID == %@", id as CVarArg)
+        return try? context.fetch(request).first
+    }
+
+    private func createPreference() -> PersonalVoucherPreference? {
+        guard let context = managedObjectContext else { return nil }
+        let item = PersonalVoucherPreference(context: context)
+        item.id = UUID()
+        item.voucherID = id
+        item.isFavorite = false
+        item.sortOrder = 0
+        SharedModelContainer.assignToPrivateStore(item, in: context)
+        return item
+    }
+
+    func deletePersonalPreference(in context: NSManagedObjectContext? = nil) {
+        guard let context = context ?? managedObjectContext else { return }
+        let request = PersonalVoucherPreference.fetchRequest()
+        request.predicate = NSPredicate(format: "voucherID == %@", id as CVarArg)
+
+        do {
+            for item in try context.fetch(request) {
+                context.delete(item)
+            }
+        } catch {
+            debugLog("Impossible de supprimer les préférences du bon: \(error)")
+        }
+    }
+
+    private var archivedExpenses: [Expense] {
+        guard sharingRole != .recipient, let context = managedObjectContext else { return [] }
+        let request = Expense.fetchRequest()
+        request.predicate = NSPredicate(format: "voucher == nil AND archivedVoucherID == %@", id as CVarArg)
+        return (try? context.fetch(request)) ?? []
+    }
+}
+
+extension Voucher {
+    @nonobjc class func fetchRequest() -> NSFetchRequest<Voucher> {
+        NSFetchRequest<Voucher>(entityName: "Voucher")
     }
 }
 

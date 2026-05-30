@@ -6,14 +6,79 @@
 //
 
 import SwiftUI
+import CoreData
+
+struct VoucherCardItem {
+    let storeName: String
+    let voucherNumber: String
+    let amount: Double?
+    let remainingBalance: Double
+    let totalExpenses: Double
+    let expirationDate: Date?
+    let storeColor: String
+    let textColor: String
+    let isFavorite: Bool
+    let isReceivedShare: Bool
+    let isInActiveShare: Bool
+
+    init(
+        storeName: String,
+        voucherNumber: String,
+        amount: Double?,
+        remainingBalance: Double,
+        totalExpenses: Double,
+        expirationDate: Date?,
+        storeColor: String,
+        textColor: String,
+        isFavorite: Bool,
+        isReceivedShare: Bool,
+        isInActiveShare: Bool
+    ) {
+        self.storeName = storeName
+        self.voucherNumber = voucherNumber
+        self.amount = amount
+        self.remainingBalance = remainingBalance
+        self.totalExpenses = totalExpenses
+        self.expirationDate = expirationDate
+        self.storeColor = storeColor
+        self.textColor = textColor
+        self.isFavorite = isFavorite
+        self.isReceivedShare = isReceivedShare
+        self.isInActiveShare = isInActiveShare
+    }
+
+    init(voucher: Voucher) {
+        self.storeName = voucher.storeName
+        self.voucherNumber = voucher.voucherNumber
+        self.amount = voucher.amount
+        self.remainingBalance = voucher.remainingBalance
+        self.totalExpenses = voucher.totalExpenses
+        self.expirationDate = voucher.expirationDate
+        self.storeColor = voucher.storeColor
+        self.textColor = voucher.textColor
+        self.isFavorite = voucher.isFavorite
+        self.isReceivedShare = voucher.isReceivedShare
+        self.isInActiveShare = voucher.isInActiveShare
+    }
+}
 
 struct VoucherCardView: View {
-    let voucher: Voucher
+    let item: VoucherCardItem
     var showsFavoriteIcon: Bool = true
+
+    init(voucher: Voucher, showsFavoriteIcon: Bool = true) {
+        self.item = VoucherCardItem(voucher: voucher)
+        self.showsFavoriteIcon = showsFavoriteIcon
+    }
+
+    init(item: VoucherCardItem, showsFavoriteIcon: Bool = true) {
+        self.item = item
+        self.showsFavoriteIcon = showsFavoriteIcon
+    }
     
     // Couleur du texte à utiliser
     private var textColor: Color {
-        Color(hex: voucher.textColor)
+        Color(hex: item.textColor)
     }
     
     var body: some View {
@@ -23,24 +88,34 @@ struct VoucherCardView: View {
                 Spacer()
                     .frame(width: 28)
                 
-                Text(voucher.storeName)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(textColor)
+                HStack(spacing: 6) {
+                    Text(item.storeName)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(textColor)
+                        .lineLimit(1)
+
+                    if item.isInActiveShare {
+                        Image(systemName: item.isReceivedShare ? "person.badge.shield.checkmark.fill" : "person.2.fill")
+                            .font(.caption)
+                            .foregroundStyle(textColor.opacity(0.95))
+                            .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+                    }
+                }
                 
                 Spacer()
                 
-                if let amount = voucher.amount {
+                if let amount = item.amount {
                     // Montants alignés à droite sans clipping du montant initial
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(voucher.remainingBalance.formattedEuro)
+                        Text(item.remainingBalance.formattedEuro)
                             .font(.title3)
                             .fontWeight(.semibold)
                             .foregroundStyle(textColor)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                         
-                        if voucher.totalExpenses > 0 {
+                        if item.totalExpenses > 0 {
                             Text("sur \(amount.formattedEuro)")
                                 .font(.caption2)
                                 .foregroundStyle(textColor.opacity(0.7))
@@ -59,7 +134,7 @@ struct VoucherCardView: View {
                 Text("Numéro")
                     .font(.caption)
                     .foregroundStyle(textColor.opacity(0.8))
-                Text(voucher.voucherNumber)
+                Text(item.voucherNumber)
                     .font(.system(.body, design: .monospaced))
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
@@ -67,7 +142,7 @@ struct VoucherCardView: View {
             }
             
             // Date d'expiration
-            if let expiration = voucher.expirationDate {
+            if let expiration = item.expirationDate {
                 HStack {
                     Image(systemName: "clock.fill")
                         .font(.caption)
@@ -81,7 +156,7 @@ struct VoucherCardView: View {
         .frame(height: 200)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(hex: voucher.storeColor))
+                .fill(Color(hex: item.storeColor))
                 .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
         )
         .overlay(alignment: .topLeading) {
@@ -92,15 +167,15 @@ struct VoucherCardView: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: voucher.isFavorite)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: item.isFavorite)
     }
     
     private var favoriteIcon: some View {
-        Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+        Image(systemName: item.isFavorite ? "star.fill" : "star")
             .font(.title2)
-            .foregroundStyle(voucher.isFavorite ? .yellow : textColor.opacity(0.9))
+            .foregroundStyle(item.isFavorite ? .yellow : textColor.opacity(0.9))
             .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
-            .symbolEffect(.bounce, value: voucher.isFavorite)
+            .symbolEffect(.bounce, value: item.isFavorite)
     }
     
 }
@@ -109,6 +184,7 @@ struct VoucherCardView: View {
     VStack(spacing: 20) {
         // Carte normale
         VoucherCardView(voucher: Voucher(
+            context: PreviewData.shared.container.viewContext,
             storeName: "Carrefour",
             amount: 50.0,
             voucherNumber: "1234567890123",
@@ -122,6 +198,7 @@ struct VoucherCardView: View {
         // Carte favorite
         VoucherCardView(voucher: {
             let voucher = Voucher(
+                context: PreviewData.shared.container.viewContext,
                 storeName: "Fnac",
                 amount: 100.0,
                 voucherNumber: "9876543210987",

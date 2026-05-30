@@ -6,23 +6,28 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
 
 @main
 struct Voucher_WalletApp: App {
+    @UIApplicationDelegateAdaptor(CloudSharingAppDelegate.self) private var appDelegate
     @State private var urlHandler = URLHandler()
-    
-    // Container SwiftData avec les deux modèles et synchronisation iCloud
-    let modelContainer: ModelContainer
+
+    let persistence: SharedModelContainer
+    let sharingManager: VoucherSharingManager
     
     // Initialiser le SettingsManager et le ModelContainer au démarrage
     init() {
         do {
-            modelContainer = try SharedModelContainer.create()
-            debugLog("✅ ModelContainer créé avec App Group")
+            let persistence = try SharedModelContainer()
+            self.persistence = persistence
+            let sharingManager = VoucherSharingManager(persistence: persistence)
+            self.sharingManager = sharingManager
+            appDelegate.sharingManager = sharingManager
+            debugLog("✅ Conteneur Core Data CloudKit privé/partagé créé")
         } catch {
             debugLog("❌ Erreur: \(error)")
-            fatalError("Could not create ModelContainer: \(error)")
+            fatalError("Could not create persistent container: \(error)")
         }
         
         _ = SettingsManager.shared
@@ -33,11 +38,23 @@ struct Voucher_WalletApp: App {
         WindowGroup {
             ContentView()
                 .environment(urlHandler)
+                .environment(sharingManager)
+                .environment(\.managedObjectContext, persistence.container.viewContext)
                 .onOpenURL { url in
                     debugLog("🔵 App received URL: \(url)")
+                    if sharingManager.acceptShareURLIfPossible(url) {
+                        return
+                    }
+                    urlHandler.handleURL(url)
+                }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    guard let url = activity.webpageURL else { return }
+                    debugLog("🔵 App received user activity URL: \(url)")
+                    if sharingManager.acceptShareURLIfPossible(url) {
+                        return
+                    }
                     urlHandler.handleURL(url)
                 }
         }
-        .modelContainer(modelContainer)
     }
 }

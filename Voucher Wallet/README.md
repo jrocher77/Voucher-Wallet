@@ -56,18 +56,20 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 
 ### ☁️ Synchronisation iCloud
 - **CloudKit privé** : Synchronisation automatique des bons et dépenses entre les appareils connectés au même compte iCloud
-- **Récupération après changement d'iPhone** : Les données SwiftData sont restaurées via iCloud quand l'application est installée sur un nouvel appareil
+- **Partage iCloud** : Un propriétaire peut partager un bon avec plusieurs proches depuis son détail ; les participants peuvent l'utiliser et saisir leurs propres dépenses sans modifier le bon
+- **Dépenses attribuées** : Les dépenses créées pendant un partage affichent leur auteur et leur heure de saisie
+- **Favoris personnels** : Un bon reçu peut être favori et apparaître dans le widget, sans synchroniser ce choix avec le propriétaire
+- **Récupération après changement d'iPhone** : Les données Core Data sont restaurées via iCloud quand l'application est installée sur un nouvel appareil
 - **Widget compatible** : La cible widget utilise le même conteneur CloudKit et le même App Group que l'application principale
 
 ---
 
 ## 🏗️ Architecture
 
-### Modèles de Données (SwiftData)
+### Modèles de Données (Core Data + CloudKit)
 
 ```swift
-@Model
-class Voucher {
+final class Voucher: NSManagedObject {
     var storeName: String
     var voucherNumber: String
     var pinCode: String?
@@ -115,8 +117,9 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
 ```
 
 ### Stockage
-- **SwiftData + CloudKit** : Modèles de données persistants synchronisés via le conteneur iCloud privé de l'utilisateur
-- **App Group** : Partage du store SwiftData entre l'application et le widget
+- **Core Data + CloudKit** : `NSPersistentCloudKitContainer` utilise un store privé et un store partagé afin de prendre en charge `CKShare`
+- **App Group** : Partage des stores Core Data locaux entre l'application et le widget
+- **Préférences personnelles** : favoris et ordre sont conservés en données privées, séparées du bon partagé
 - **UserDefaults** : Préférences d'apprentissage
   - `learnedStoreColors` : Dictionnaire `[String: String]`
   - `learnedTextColors` : Dictionnaire `[String: String]`

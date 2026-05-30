@@ -7,16 +7,18 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
 import PhotosUI
 import UniformTypeIdentifiers
 
 struct AddVoucherView: View {
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.managedObjectContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
     // Requête pour récupérer tous les bons existants
-    @Query private var existingVouchers: [Voucher]
+    @FetchRequest(sortDescriptors: []) private var fetchedVouchers: FetchedResults<Voucher>
+
+    private var existingVouchers: [Voucher] { Array(fetchedVouchers) }
     
     // ViewModel centralisé pour la gestion de l'import
     @State private var viewModel = VoucherImportViewModel()
@@ -468,5 +470,5 @@ struct AddVoucherView: View {
 
 #Preview {
     AddVoucherView()
-        .modelContainer(for: Voucher.self, inMemory: true)
+        .environment(\.managedObjectContext, PreviewData.shared.container.viewContext)
 }

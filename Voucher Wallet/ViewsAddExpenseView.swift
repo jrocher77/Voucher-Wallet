@@ -6,15 +6,17 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
 
 struct AddExpenseView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(VoucherSharingManager.self) private var sharingManager
+    @Environment(\.managedObjectContext) private var modelContext
     
     let voucher: Voucher
     var existingExpense: Expense? // Pour l'édition - pas @State !
     var onVoucherDeleted: (() -> Void)? // Callback pour informer la vue parente
+    var onExpenseSaved: (() -> Void)?
     
     @State private var amount: String
     @State private var note: String
@@ -22,15 +24,25 @@ struct AddExpenseView: View {
     @State private var showingError = false
     @State private var errorMessage = ""
     @State private var showingDeleteVoucherAlert = false
+    @State private var showingIdentityPrompt = false
+    @State private var pendingExpenseSave = false
+    @State private var displayName = ""
+    @State private var isDeletingVoucher = false
     
     private var isEditing: Bool {
         existingExpense != nil
     }
     
-    init(voucher: Voucher, expense: Expense? = nil, onVoucherDeleted: (() -> Void)? = nil) {
+    init(
+        voucher: Voucher,
+        expense: Expense? = nil,
+        onVoucherDeleted: (() -> Void)? = nil,
+        onExpenseSaved: (() -> Void)? = nil
+    ) {
         self.voucher = voucher
         self.existingExpense = expense
         self.onVoucherDeleted = onVoucherDeleted
+        self.onExpenseSaved = onExpenseSaved
         
         // Debug
         if let expense = expense {
@@ -56,7 +68,10 @@ struct AddExpenseView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        if isDeletingVoucher {
+            Color.clear
+        } else {
+            NavigationStack {
             Form {
                 Section {
                     LabeledContent("Solde restant") {
@@ -157,6 +172,23 @@ struct AddExpenseView: View {
             } message: {
                 Text("Le solde de ce bon est maintenant à 0 €. Voulez-vous supprimer le bon ?")
             }
+            .alert("Votre nom d'affichage", isPresented: $showingIdentityPrompt) {
+                TextField("Prénom Nom", text: $displayName)
+                Button("Annuler", role: .cancel) {
+                    pendingExpenseSave = false
+                }
+                Button("Continuer") {
+                    sharingManager.saveDisplayName(displayName)
+                    if pendingExpenseSave {
+                        pendingExpenseSave = false
+                        saveExpense()
+                    }
+                }
+                .disabled(displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } message: {
+                Text("Votre nom sera affiché avec les dépenses de ce bon partagé.")
+            }
+        }
         }
     }
     
@@ -177,6 +209,12 @@ struct AddExpenseView: View {
     }
     
     private func saveExpense() {
+        if voucher.isInActiveShare && sharingManager.storedDisplayName.isEmpty {
+            displayName = ""
+            pendingExpenseSave = true
+            showingIdentityPrompt = true
+            return
+        }
         guard let expenseAmount = parsedAmount else {
             errorMessage = "Montant invalide"
             showingError = true
@@ -203,22 +241,32 @@ struct AddExpenseView: View {
             // Création
             debugLog("➕ Création d'une nouvelle dépense")
             let expense = Expense(
+                context: modelContext,
                 amount: expenseAmount,
                 date: date,
                 note: note.isEmpty ? nil : note
             )
+            if voucher.isInActiveShare {
+                expense.authorDisplayName = sharingManager.storedDisplayName
+                expense.authorRecordName = sharingManager.authorIdentifier
+                expense.sharingPeriodID = voucher.activeSharingPeriodID
+            }
+            SharedModelContainer.assign(expense, toStoreOf: voucher)
             expense.voucher = voucher
-            modelContext.insert(expense)
             debugLog("   ✓ Nouvelle dépense créée (ID: \(expense.id))")
         }
         
         do {
             try modelContext.save()
             debugLog("💾 Dépense sauvegardée avec succès")
+            modelContext.refresh(voucher, mergeChanges: true)
+            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
+            onExpenseSaved?()
             reloadFavoriteWidgetIfNeeded()
             
             // Vérifier si le solde est maintenant à 0
-            if voucher.remainingBalance == 0 {
+            if voucher.remainingBalance == 0 && !voucher.isReceivedShare {
                 debugLog("⚠️ Le solde du bon est maintenant à 0")
                 showingDeleteVoucherAlert = true
             } else {
@@ -237,6 +285,10 @@ struct AddExpenseView: View {
         
         do {
             try modelContext.save()
+            modelContext.refresh(voucher, mergeChanges: true)
+            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
+            onExpenseSaved?()
             reloadFavoriteWidgetIfNeeded()
             dismiss()
         } catch {
@@ -246,20 +298,35 @@ struct AddExpenseView: View {
     }
     
     private func deleteVoucher() {
-        // Marquer que le bon va être supprimé AVANT de le supprimer
+        let objectID = voucher.objectID
+        let voucherID = voucher.id
+        let wasFavorite = voucher.isFavorite
+        isDeletingVoucher = true
+        showingDeleteVoucherAlert = false
+
+        // Marquer que le bon va être supprimé AVANT de le supprimer.
         onVoucherDeleted?()
-        
-        modelContext.delete(voucher)
-        
-        do {
-            try modelContext.save()
-            debugLog("🗑️ Bon supprimé avec succès")
-            reloadFavoriteWidgetIfNeeded()
-            dismiss()
-        } catch {
-            errorMessage = "Erreur lors de la suppression du bon : \(error.localizedDescription)"
-            showingError = true
-            debugLog("❌ Erreur de suppression du bon: \(error)")
+        dismiss()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
+            sharingManager.revokeIfNeeded(for: voucherToDelete)
+            voucherToDelete.deletePersonalPreference(in: modelContext)
+            modelContext.delete(voucherToDelete)
+
+            do {
+                try modelContext.save()
+                debugLog("🗑️ Bon supprimé avec succès")
+                NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+                if wasFavorite {
+                    WidgetReloader.reloadFavoriteVouchersWidget()
+                }
+            } catch {
+                errorMessage = "Erreur lors de la suppression du bon : \(error.localizedDescription)"
+                showingError = true
+                isDeletingVoucher = false
+                debugLog("❌ Erreur de suppression du bon: \(error)")
+            }
         }
     }
     
@@ -271,11 +338,13 @@ struct AddExpenseView: View {
 
 #Preview {
     AddExpenseView(voucher: Voucher(
+        context: PreviewData.shared.container.viewContext,
         storeName: "Carrefour",
         amount: 50.0,
         voucherNumber: "1234567890123",
         codeType: .barcode,
         storeColor: "#0055A5"
     ))
-    .modelContainer(for: Voucher.self, inMemory: true)
+    .environment(\.managedObjectContext, PreviewData.shared.container.viewContext)
+    .environment(VoucherSharingManager(persistence: PreviewData.shared.persistence))
 }

@@ -6,13 +6,19 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
+import Combine
 import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(URLHandler.self) var urlHandler
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Voucher.dateAdded, order: .reverse) private var vouchers: [Voucher]
+    @Environment(VoucherSharingManager.self) private var sharingManager
+    @Environment(\.managedObjectContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+    @FetchRequest(
+        sortDescriptors: [NSSortDescriptor(keyPath: \Voucher.dateAdded, ascending: false)],
+        animation: .default
+    ) private var fetchedVouchers: FetchedResults<Voucher>
     
     @State private var showingAddVoucher = false
     @State private var selectedStoreFilter: String?
@@ -24,11 +30,131 @@ struct ContentView: View {
     @State private var voucherToEdit: Voucher?
     @State private var voucherToDelete: Voucher?
     @State private var showingDeleteAlert = false
+    @State private var favoriteRevision = 0
+    @State private var cloudRefreshStatus: CloudRefreshStatus?
+    @State private var cloudRefreshStatusToken = UUID()
+    @State private var sharingStatusToken = UUID()
+    @State private var receivedSharedVouchers: [Voucher] = []
+    @State private var receivedShareRevision = 0
 
     private let favoriteChangeAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
+
+    private enum CloudRefreshStatus: Equatable {
+        case syncing
+        case completed
+        case failed
+
+        var text: String {
+            switch self {
+            case .syncing:
+                return "Synchronisation iCloud en cours..."
+            case .completed:
+                return "Synchronisation iCloud terminée"
+            case .failed:
+                return "Synchronisation iCloud impossible"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .syncing:
+                return "Les changements peuvent arriver dans quelques secondes."
+            case .completed:
+                return "Le wallet est à jour avec les dernières données reçues."
+            case .failed:
+                return "Réessayez dans quelques secondes."
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .syncing:
+                return "arrow.triangle.2.circlepath.icloud"
+            case .completed:
+                return "checkmark.icloud"
+            case .failed:
+                return "exclamationmark.icloud"
+            }
+        }
+    }
+
+    private var vouchers: [Voucher] {
+        _ = receivedShareRevision
+        var seenObjectIDs = Set<NSManagedObjectID>()
+        return (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
+            guard voucher.managedObjectContext != nil, !voucher.isDeleted else { return false }
+            return seenObjectIDs.insert(voucher.objectID).inserted
+        }.filter { voucher in
+            voucher.managedObjectContext != nil && !voucher.isDeleted
+        }
+    }
+
+    private struct VoucherListItem: Identifiable {
+        let id: UUID
+        let voucher: Voucher
+        let storeName: String
+        let voucherNumber: String
+        let amount: Double?
+        let remainingBalance: Double
+        let totalExpenses: Double
+        let expirationDate: Date?
+        let storeColor: String
+        let textColor: String
+        let isFavorite: Bool
+        let sortOrder: Int
+        let dateAdded: Date
+        let isReceivedShare: Bool
+        let isInActiveShare: Bool
+
+        init(voucher: Voucher) {
+            let activeExpenses = voucher.activeExpensesList
+            let activeTotal = activeExpenses.reduce(0) { $0 + $1.amount }
+            let amount = voucher.amount
+
+            self.id = voucher.id
+            self.voucher = voucher
+            self.storeName = voucher.storeName
+            self.voucherNumber = voucher.voucherNumber
+            self.amount = amount
+            let remainingBalance = amount.map { $0 - voucher.spentBeforeCurrentShare - activeTotal } ?? 0
+            self.remainingBalance = remainingBalance
+            self.totalExpenses = amount.map { $0 - remainingBalance } ?? activeTotal
+            self.expirationDate = voucher.expirationDate
+            self.storeColor = voucher.storeColor
+            self.textColor = voucher.textColor
+            self.isFavorite = voucher.isFavorite
+            self.sortOrder = voucher.sortOrder
+            self.dateAdded = voucher.dateAdded
+            self.isReceivedShare = voucher.isReceivedShare
+            self.isInActiveShare = voucher.isInActiveShare
+        }
+
+        var cardItem: VoucherCardItem {
+            VoucherCardItem(
+                storeName: storeName,
+                voucherNumber: voucherNumber,
+                amount: amount,
+                remainingBalance: remainingBalance,
+                totalExpenses: totalExpenses,
+                expirationDate: expirationDate,
+                storeColor: storeColor,
+                textColor: textColor,
+                isFavorite: isFavorite,
+                isReceivedShare: isReceivedShare,
+                isInActiveShare: isInActiveShare
+            )
+        }
+    }
+
+    @MainActor
+    private var voucherItems: [VoucherListItem] {
+        _ = favoriteRevision
+        return vouchers.map(VoucherListItem.init)
+    }
     
-    var filteredVouchers: [Voucher] {
-        var result = vouchers
+    @MainActor
+    private var filteredVoucherItems: [VoucherListItem] {
+        var result = voucherItems
         
         // Filtre par enseigne
         if let store = selectedStoreFilter {
@@ -55,12 +181,33 @@ struct ContentView: View {
         }
     }
 
-    var favoriteVouchers: [Voucher] {
-        filteredVouchers.filter { $0.isFavorite }
+    @MainActor
+    private var walletSections: (favorites: [VoucherListItem], others: [VoucherListItem]) {
+        let items = filteredVoucherItems
+        return (
+            favorites: items.filter(\.isFavorite),
+            others: items.filter { !$0.isFavorite }
+        )
     }
 
-    var otherVouchers: [Voucher] {
-        filteredVouchers.filter { !$0.isFavorite }
+    @MainActor
+    private var favoriteVoucherItems: [VoucherListItem] {
+        walletSections.favorites
+    }
+
+    @MainActor
+    private var otherVoucherItems: [VoucherListItem] {
+        walletSections.others
+    }
+
+    @MainActor
+    private var favoriteVouchers: [Voucher] {
+        favoriteVoucherItems.map(\.voucher)
+    }
+
+    @MainActor
+    private var otherVouchers: [Voucher] {
+        otherVoucherItems.map(\.voucher)
     }
     
     var uniqueStores: [String] {
@@ -111,7 +258,7 @@ struct ContentView: View {
             .onChange(of: showingAddVoucher) { oldValue, newValue in
                 // Quand on ferme la vue d'ajout, recharger le widget
                 if oldValue && !newValue {
-                    // Petit délai pour laisser SwiftData sauvegarder
+                    // Petit délai pour laisser la sauvegarde s'achever
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         WidgetReloader.reloadAllWidgets()
                     }
@@ -163,82 +310,294 @@ struct ContentView: View {
             } message: {
                 Text("Cette action est irréversible.")
             }
+            .alert("Partage iCloud", isPresented: Binding(
+                get: { sharingManager.lastErrorMessage != nil },
+                set: { if !$0 { sharingManager.lastErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {
+                    sharingManager.lastErrorMessage = nil
+                }
+            } message: {
+                Text(sharingManager.lastErrorMessage ?? "")
+            }
             .onAppear {
                 if favoritesManager == nil {
                     favoritesManager = FavoritesManager(modelContext: modelContext)
                 }
+                reloadReceivedSharedVouchers(reason: "wallet-appear")
                 initializeSortOrderIfNeeded()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: FavoritesManager.favoritesDidChange)) { _ in
+                favoriteRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherSharingDidChange)) { _ in
+                favoriteRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherShareAccepted)) { _ in
+                try? modelContext.setQueryGenerationFrom(.current)
+                modelContext.processPendingChanges()
+                reloadReceivedSharedVouchers(reason: "share-accepted")
+                favoriteRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
+                try? modelContext.setQueryGenerationFrom(.current)
+                modelContext.processPendingChanges()
+                reloadReceivedSharedVouchers(reason: "remote-store-change")
+                favoriteRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: SharedModelContainer.cloudSyncStatusNotificationName)) { notification in
+                guard let status = notification.object as? String else { return }
+                switch status {
+                case "started":
+                    showCloudRefreshStatus(.syncing)
+                case "finished":
+                    showCloudRefreshStatus(.completed)
+                case "failed":
+                    showCloudRefreshStatus(.failed)
+                default:
+                    break
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
+                if let voucherID = notification.object as? UUID,
+                   let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                    modelContext.refresh(voucher, mergeChanges: false)
+                } else {
+                    refreshVisibleVouchers()
+                    return
+                }
+                favoriteRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherExpensesDidChange)) { notification in
+                if let voucherID = notification.object as? UUID,
+                   let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                    modelContext.refresh(voucher, mergeChanges: false)
+                } else {
+                    refreshVisibleVouchers()
+                    return
+                }
+                favoriteRevision += 1
+            }
+            .onChange(of: sharingManager.sharingStatusMessage) { _, newValue in
+                scheduleSharingStatusAutoHide(for: newValue)
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard newPhase == .active else { return }
+                sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
+                reloadReceivedSharedVouchers(reason: "scene-active")
             }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
+        .overlay(alignment: .top) {
+            compactCloudStatusBanner
+                .padding(.top, 6)
+                .padding(.horizontal, 54)
+        }
+    }
+
+    private func refreshVisibleVouchers() {
+        modelContext.processPendingChanges()
+        sharingManager.reconcileSharingStates()
+        reloadReceivedSharedVouchers(reason: "wallet-refresh-event")
+        favoriteRevision += 1
+    }
+
+    private func reloadReceivedSharedVouchers(reason: String) {
+        guard let sharedStore = sharingManager.persistence.sharedStore else {
+            receivedSharedVouchers = []
+            receivedShareRevision += 1
+            return
+        }
+
+        let request = Voucher.fetchRequest()
+        request.affectedStores = [sharedStore]
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Voucher.dateAdded, ascending: false)]
+        request.includesPendingChanges = true
+        request.returnsObjectsAsFaults = false
+
+        do {
+            receivedSharedVouchers = try modelContext.fetch(request).filter { voucher in
+                voucher.managedObjectContext != nil && !voucher.isDeleted
+            }
+            receivedShareRevision += 1
+            debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")
+        } catch {
+            debugLog("Lecture du wallet partagé impossible (\(reason)): \(error.localizedDescription)")
+        }
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "wallet.pass")
-                .font(.system(size: 80))
-                .foregroundStyle(.secondary)
-            
-            Text("Aucun bon d'achat")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Text("Ajoutez votre premier bon en appuyant sur +")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            
-            Button {
-                showingAddVoucher = true
-            } label: {
-                Label("Ajouter un bon", systemImage: "plus")
-                    .font(.headline)
-                    .padding(.horizontal, 6)
+        ScrollView {
+            VStack(spacing: 20) {
+                Image(systemName: "wallet.pass")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.secondary)
+                
+                Text("Aucun bon d'achat")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Text("Ajoutez votre premier bon en appuyant sur +")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                Button {
+                    showingAddVoucher = true
+                } label: {
+                    Label("Ajouter un bon", systemImage: "plus")
+                        .font(.headline)
+                        .padding(.horizontal, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+                .controlSize(.large)
+                .padding(.top)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.blue)
-            .controlSize(.large)
-            .padding(.top)
+            .frame(maxWidth: .infinity)
+            .padding()
         }
-        .padding()
     }
     
+    @ViewBuilder
     private var voucherListView: some View {
+        let sections = walletSections
+
         ScrollView {
             LazyVStack(spacing: 16) {
-                if canReorder || !favoriteVouchers.isEmpty {
+                if canReorder || !sections.favorites.isEmpty {
                     sectionHeader("Mes bons d'achat favoris", isFavoriteSection: true)
 
-                    if favoriteVouchers.isEmpty {
+                    if sections.favorites.isEmpty {
                         sectionDropHint(
                             "Glissez un bon ici pour l'ajouter aux favoris",
                             isFavoriteSection: true
                         )
                     }
 
-                    ForEach(favoriteVouchers) { voucher in
-                        voucherRow(voucher, isFavoriteSection: true)
+                    ForEach(sections.favorites) { item in
+                        voucherRow(item, isFavoriteSection: true)
                     }
                 }
 
-                if canReorder || !otherVouchers.isEmpty {
+                if canReorder || !sections.others.isEmpty {
                     sectionHeader("Mes autres bons d'achat", isFavoriteSection: false)
 
-                    if otherVouchers.isEmpty {
+                    if sections.others.isEmpty {
                         sectionDropHint(
                             "Glissez un bon ici pour le retirer des favoris",
                             isFavoriteSection: false
                         )
                     }
 
-                    ForEach(otherVouchers) { voucher in
-                        voucherRow(voucher, isFavoriteSection: false)
+                    ForEach(sections.others) { item in
+                        voucherRow(item, isFavoriteSection: false)
                     }
                 }
             }
             .padding()
-            .animation(favoriteChangeAnimation, value: favoriteVouchers.map(\.id))
-            .animation(favoriteChangeAnimation, value: otherVouchers.map(\.id))
+            .animation(favoriteChangeAnimation, value: sections.favorites.map(\.id))
+            .animation(favoriteChangeAnimation, value: sections.others.map(\.id))
+        }
+    }
+
+    @ViewBuilder
+    private var compactCloudStatusBanner: some View {
+        if let status = compactCloudStatus {
+            HStack(spacing: 7) {
+                if status.isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: status.systemImage)
+                        .font(.caption)
+                        .foregroundStyle(status.tint)
+                }
+
+                Text(status.text)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: 280)
+            .background(.thinMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.10), radius: 6, x: 0, y: 2)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    private struct CompactCloudStatus {
+        let text: String
+        let systemImage: String
+        let tint: Color
+        let isLoading: Bool
+    }
+
+    private var compactCloudStatus: CompactCloudStatus? {
+        if let cloudRefreshStatus {
+            return CompactCloudStatus(
+                text: cloudRefreshStatus.text,
+                systemImage: cloudRefreshStatus.systemImage,
+                tint: cloudRefreshStatus == .failed ? .red : .green,
+                isLoading: cloudRefreshStatus == .syncing
+            )
+        }
+
+        guard let message = sharingManager.sharingStatusMessage else { return nil }
+        let isLoading = message.contains("...") || message.contains("synchronisation") || message.contains("Acceptation")
+        return CompactCloudStatus(
+            text: message,
+            systemImage: "person.2.badge.gearshape",
+            tint: .blue,
+            isLoading: isLoading
+        )
+    }
+
+    @discardableResult
+    private func showCloudRefreshStatus(_ status: CloudRefreshStatus, autoHideAfter: TimeInterval? = nil) -> UUID {
+        let token = UUID()
+        cloudRefreshStatusToken = token
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            cloudRefreshStatus = status
+        }
+
+        let delay = autoHideAfter ?? (status == .syncing ? nil : 3.5)
+        guard let delay else { return token }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard cloudRefreshStatusToken == token else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                cloudRefreshStatus = nil
+            }
+        }
+        return token
+    }
+
+    private func scheduleSharingStatusAutoHide(for message: String?) {
+        let token = UUID()
+        sharingStatusToken = token
+
+        guard let message else { return }
+        let delay: TimeInterval
+        if message.contains("Acceptation") || message.contains("synchronisation") || message.contains("...") {
+            delay = 6
+        } else if message.contains("échou") || message.contains("impossible") {
+            delay = 8
+        } else {
+            delay = 4
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard sharingStatusToken == token,
+                  sharingManager.sharingStatusMessage == message else { return }
+            withAnimation(.easeOut(duration: 0.25)) {
+                sharingManager.sharingStatusMessage = nil
+            }
         }
     }
 
@@ -299,27 +658,28 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func voucherRow(_ voucher: Voucher, isFavoriteSection: Bool) -> some View {
+    private func voucherRow(_ item: VoucherListItem, isFavoriteSection: Bool) -> some View {
         let row = ZStack(alignment: .topLeading) {
             Button {
-                navigationPath.append(voucher)
+                navigationPath.append(item.voucher)
             } label: {
-                VoucherCardView(voucher: voucher, showsFavoriteIcon: false)
+                VoucherCardView(item: item.cardItem, showsFavoriteIcon: false)
+                    .id("\(item.id)-\(favoriteRevision)")
             }
             .buttonStyle(.plain)
 
             Button {
-                toggleFavorite(voucher)
+                toggleFavorite(item.voucher)
             } label: {
                 ZStack(alignment: .topLeading) {
                     Color.black.opacity(0.001)
                         .frame(width: 56, height: 56)
 
-                    Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+                    Image(systemName: item.isFavorite ? "star.fill" : "star")
                         .font(.title2)
-                        .foregroundStyle(voucher.isFavorite ? .yellow : Color(hex: voucher.textColor).opacity(0.9))
+                        .foregroundStyle(item.isFavorite ? .yellow : Color(hex: item.textColor).opacity(0.9))
                         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
-                        .symbolEffect(.bounce, value: voucher.isFavorite)
+                        .symbolEffect(.bounce, value: item.isFavorite)
                 }
                 .contentShape(Rectangle())
             }
@@ -330,19 +690,19 @@ struct ContentView: View {
         }
         .transition(.opacity.combined(with: .move(edge: .top)))
         .contextMenu {
-            voucherContextMenu(for: voucher)
+            voucherContextMenu(for: item.voucher)
         }
 
         if canReorder {
             row
                 .onDrag {
-                    draggedVoucher = voucher
-                    return NSItemProvider(object: voucher.id.uuidString as NSString)
+                    draggedVoucher = item.voucher
+                    return NSItemProvider(object: item.id.uuidString as NSString)
                 }
                 .onDrop(
                     of: [UTType.text],
                     delegate: VoucherDropDelegate(
-                        targetVoucher: voucher,
+                        targetVoucher: item.voucher,
                         targetIsFavorite: isFavoriteSection,
                         draggedVoucher: $draggedVoucher,
                         onMoveToVoucher: moveVoucher,
@@ -366,18 +726,27 @@ struct ContentView: View {
         }
 
         Button {
-            voucherToEdit = voucher
+            if voucher.isReceivedShare {
+                sharingManager.removeReceivedVoucher(voucher, after: 0.15)
+            } else {
+                voucherToEdit = voucher
+            }
         } label: {
-            Label("Modifier", systemImage: "pencil")
+            Label(
+                voucher.isReceivedShare ? "Quitter le partage" : "Modifier",
+                systemImage: voucher.isReceivedShare ? "rectangle.portrait.and.arrow.right" : "pencil"
+            )
         }
 
-        Divider()
+        if !voucher.isReceivedShare {
+            Divider()
 
-        Button(role: .destructive) {
-            voucherToDelete = voucher
-            showingDeleteAlert = true
-        } label: {
-            Label("Supprimer", systemImage: "trash")
+            Button(role: .destructive) {
+                voucherToDelete = voucher
+                showingDeleteAlert = true
+            } label: {
+                Label("Supprimer", systemImage: "trash")
+            }
         }
     }
 
@@ -417,19 +786,26 @@ struct ContentView: View {
 
     private func deleteVoucherPendingDeletion() {
         guard let voucher = voucherToDelete else { return }
+        let objectID = voucher.objectID
+        let voucherID = voucher.id
         let wasFavorite = voucher.isFavorite
+        voucherToDelete = nil
+        navigationPath.removeLast(navigationPath.count)
 
-        modelContext.delete(voucher)
+        guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
+        sharingManager.revokeIfNeeded(for: voucherToDelete)
+        voucherToDelete.deletePersonalPreference(in: modelContext)
+        modelContext.delete(voucherToDelete)
         do {
             try modelContext.save()
+            NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+            refreshVisibleVouchers()
             if wasFavorite {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }
         } catch {
             debugLog("❌ Erreur lors de la suppression du bon: \(error)")
         }
-
-        voucherToDelete = nil
     }
 
     private func initializeSortOrderIfNeeded() {
@@ -443,6 +819,7 @@ struct ContentView: View {
 
         do {
             try modelContext.save()
+            FavoritesManager.notifyChange()
         } catch {
             debugLog("❌ Erreur lors de l'initialisation du tri: \(error)")
         }
@@ -539,6 +916,7 @@ struct ContentView: View {
 
         do {
             try modelContext.save()
+            FavoritesManager.notifyChange()
             if reloadFavoriteWidget {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }
@@ -614,6 +992,7 @@ private struct VoucherDropDelegate: DropDelegate {
 
 #Preview {
     ContentView()
-        .modelContainer(PreviewData.shared.container)
+        .environment(\.managedObjectContext, PreviewData.shared.container.viewContext)
         .environment(URLHandler())
+        .environment(VoucherSharingManager(persistence: PreviewData.shared.persistence))
 }

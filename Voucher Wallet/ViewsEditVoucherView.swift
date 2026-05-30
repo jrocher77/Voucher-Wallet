@@ -6,11 +6,11 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
 
 struct EditVoucherView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(\.managedObjectContext) private var modelContext
     
     let voucher: Voucher
     
@@ -343,6 +343,8 @@ struct EditVoucherView: View {
     }
     
     private func saveChanges() {
+        let codeNeedsRegeneration = codeType != voucher.codeType || voucherNumber != voucher.voucherNumber
+
         // Mettre à jour les propriétés
         voucher.storeName = storeName
         voucher.amount = Double(amount)
@@ -362,7 +364,7 @@ struct EditVoucherView: View {
         StoreNameLearning.shared.learnTextColor(newTextColorHex, for: storeName)
         
         // Régénérer le code si nécessaire
-        if codeType != voucher.codeType || voucherNumber != voucher.voucherNumber {
+        if codeNeedsRegeneration {
             let codeImage: UIImage?
             if codeType == .qrCode {
                 codeImage = BarcodeGenerator.generateQRCode(from: voucherNumber)
@@ -375,6 +377,8 @@ struct EditVoucherView: View {
         // Sauvegarder
         do {
             try modelContext.save()
+            modelContext.refresh(voucher, mergeChanges: true)
+            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
             if voucher.isFavorite {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }
@@ -388,6 +392,7 @@ struct EditVoucherView: View {
 
 #Preview {
     EditVoucherView(voucher: Voucher(
+        context: PreviewData.shared.container.viewContext,
         storeName: "Carrefour",
         amount: 50.0,
         voucherNumber: "1234567890123",
@@ -397,5 +402,5 @@ struct EditVoucherView: View {
         storeColor: "#0055A5",
         textColor: "#FFFFFF"
     ))
-    .modelContainer(for: Voucher.self, inMemory: true)
+    .environment(\.managedObjectContext, PreviewData.shared.container.viewContext)
 }

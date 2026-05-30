@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
 
 /// ViewModel centralisé pour gérer l'import de bons depuis PDF
 @Observable
@@ -189,14 +189,14 @@ class VoucherImportViewModel {
     
     // MARK: - Import
     
-    /// Importe les bons sélectionnés dans le contexte SwiftData
+    /// Importe les bons sélectionnés dans le contexte Core Data
     /// - Parameters:
-    ///   - modelContext: Contexte SwiftData
+    ///   - modelContext: Contexte Core Data
     ///   - pdfData: Données PDF originales
     /// - Returns: Nombre de bons importés avec succès
     @discardableResult
     func importSelectedVouchers(
-        to modelContext: ModelContext,
+        to modelContext: NSManagedObjectContext,
         pdfData: Data
     ) throws -> Int {
         let selectedVouchers = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
@@ -216,7 +216,8 @@ class VoucherImportViewModel {
                 codeImage = BarcodeGenerator.generateBarcode(from: detectedVoucher.voucherNumber)
             }
             
-            let voucher = Voucher(
+            _ = Voucher(
+                context: modelContext,
                 storeName: detectedVoucher.storeName ?? "Enseigne inconnue",
                 amount: detectedVoucher.amount,
                 voucherNumber: detectedVoucher.voucherNumber,
@@ -229,8 +230,6 @@ class VoucherImportViewModel {
                 storeColor: colorHex,
                 textColor: textColorHex
             )
-            
-            modelContext.insert(voucher)
             
             // Apprentissage automatique
             if let storeName = detectedVoucher.storeName {
@@ -260,7 +259,7 @@ class VoucherImportViewModel {
     ///   - cardColor: Couleur de la carte
     ///   - textColor: Couleur du texte
     ///   - pdfData: Données PDF
-    ///   - modelContext: Contexte SwiftData
+    ///   - modelContext: Contexte Core Data
     func importSingleVoucher(
         storeName: String,
         amount: Double?,
@@ -271,7 +270,7 @@ class VoucherImportViewModel {
         cardColor: Color,
         textColor: Color,
         pdfData: Data,
-        to modelContext: ModelContext
+        to modelContext: NSManagedObjectContext
     ) throws {
         // Générer le code
         let codeImage: UIImage?
@@ -284,7 +283,8 @@ class VoucherImportViewModel {
         let colorHex = cardColor.toHex()
         let textColorHex = textColor.toHex()
         
-        let voucher = Voucher(
+        _ = Voucher(
+            context: modelContext,
             storeName: storeName,
             amount: amount,
             voucherNumber: voucherNumber,
@@ -298,8 +298,6 @@ class VoucherImportViewModel {
             textColor: textColorHex
         )
         
-        modelContext.insert(voucher)
-        
         // Apprentissage
         let detectedName = analysisResult?.detectedStoreName
         StoreNameLearning.shared.learnStoreName(storeName, detectedAs: detectedName)
@@ -310,14 +308,10 @@ class VoucherImportViewModel {
         debugLog("✅ Bon importé: \(storeName)")
     }
 
-    private func getNextSortOrder(in modelContext: ModelContext) -> Int {
-        let descriptor = FetchDescriptor<Voucher>(
-            sortBy: [SortDescriptor(\.sortOrder, order: .reverse)]
-        )
-
+    private func getNextSortOrder(in modelContext: NSManagedObjectContext) -> Int {
         do {
-            let vouchers = try modelContext.fetch(descriptor)
-            return (vouchers.first?.sortOrder ?? -1) + 1
+            let vouchers = try modelContext.fetch(Voucher.fetchRequest())
+            return (vouchers.map(\.sortOrder).max() ?? -1) + 1
         } catch {
             debugLog("⚠️ Impossible de calculer le prochain sortOrder: \(error)")
             return 0

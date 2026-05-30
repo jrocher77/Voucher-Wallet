@@ -6,20 +6,18 @@
 //
 
 import Foundation
-import SwiftData
+import CoreData
 
 @MainActor
 class PreviewData {
     static let shared = PreviewData()
     
-    let container: ModelContainer
+    let persistence: SharedModelContainer
+    var container: NSPersistentCloudKitContainer { persistence.container }
     
     init() {
         do {
-            let schema = Schema([Voucher.self])
-            let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-            container = try ModelContainer(for: schema, configurations: [configuration])
-            
+            persistence = try SharedModelContainer(inMemory: true, enablesCloudSync: false)
             // Ajouter des données de test
             addSampleData()
         } catch {
@@ -28,11 +26,12 @@ class PreviewData {
     }
     
     private func addSampleData() {
-        let context = container.mainContext
+        let context = container.viewContext
         
         // Carrefour
         let carrefourCode = BarcodeGenerator.generateBarcode(from: "1234567890123")
-        let carrefour = Voucher(
+        _ = Voucher(
+            context: context,
             storeName: "Carrefour",
             amount: 50.0,
             voucherNumber: "1234567890123",
@@ -42,11 +41,11 @@ class PreviewData {
             expirationDate: Calendar.current.date(byAdding: .day, value: 45, to: Date()),
             storeColor: StorePreset.getColor(for: "Carrefour")
         )
-        context.insert(carrefour)
         
         // Decathlon
         let decathlonCode = BarcodeGenerator.generateQRCode(from: "DEC2024987654")
-        let decathlon = Voucher(
+        _ = Voucher(
+            context: context,
             storeName: "Decathlon",
             amount: 100.0,
             voucherNumber: "DEC2024987654",
@@ -55,11 +54,11 @@ class PreviewData {
             expirationDate: Calendar.current.date(byAdding: .day, value: 90, to: Date()),
             storeColor: StorePreset.getColor(for: "Decathlon")
         )
-        context.insert(decathlon)
         
         // Fnac
         let fnacCode = BarcodeGenerator.generateBarcode(from: "FNAC202400123")
-        let fnac = Voucher(
+        _ = Voucher(
+            context: context,
             storeName: "Fnac",
             amount: 25.0,
             voucherNumber: "FNAC202400123",
@@ -69,11 +68,11 @@ class PreviewData {
             expirationDate: Calendar.current.date(byAdding: .day, value: 15, to: Date()),
             storeColor: StorePreset.getColor(for: "Fnac")
         )
-        context.insert(fnac)
         
         // Amazon
         let amazonCode = BarcodeGenerator.generateBarcode(from: "AMZN123456789012")
-        let amazon = Voucher(
+        _ = Voucher(
+            context: context,
             storeName: "Amazon",
             amount: 75.0,
             voucherNumber: "AMZN-1234-5678-9012",
@@ -83,11 +82,11 @@ class PreviewData {
             expirationDate: Calendar.current.date(byAdding: .month, value: 6, to: Date()),
             storeColor: StorePreset.getColor(for: "Amazon")
         )
-        context.insert(amazon)
         
         // Ikea (expiré)
         let ikeaCode = BarcodeGenerator.generateQRCode(from: "IKEA9876543210")
-        let ikea = Voucher(
+        _ = Voucher(
+            context: context,
             storeName: "Ikea",
             amount: 30.0,
             voucherNumber: "IKEA9876543210",
@@ -96,7 +95,6 @@ class PreviewData {
             expirationDate: Calendar.current.date(byAdding: .day, value: -5, to: Date()),
             storeColor: StorePreset.getColor(for: "Ikea")
         )
-        context.insert(ikea)
         
         try? context.save()
     }

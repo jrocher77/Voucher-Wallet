@@ -8,7 +8,7 @@
 
 import WidgetKit
 import SwiftUI
-import SwiftData
+import CoreData
 import AppIntents
 
 // MARK: - App Intent pour ouvrir un voucher
@@ -159,22 +159,19 @@ struct FavoriteVouchersProvider: TimelineProvider {
         completion(timeline)
     }
     
-    // Fonction pour récupérer les vouchers favoris depuis SwiftData
+    // Fonction pour récupérer les vouchers favoris depuis le store partagé Core Data
     private func fetchFavoriteVouchers() -> [VoucherSnapshot] {
         do {
             // Le widget lit le store partagé localement. L'app principale se charge de la synchronisation iCloud.
             let container = try SharedModelContainer.create(enablesCloudSync: false)
-            let context = ModelContext(container)
-            
-            let descriptor = FetchDescriptor<Voucher>(
-                predicate: #Predicate { $0.isFavorite == true },
-                sortBy: [
-                    SortDescriptor(\.sortOrder, order: .forward),
-                    SortDescriptor(\.dateAdded, order: .reverse)
-                ]
-            )
-            
-            let vouchers = try context.fetch(descriptor)
+            let context = container.viewContext
+            let vouchers = try context.fetch(Voucher.fetchRequest())
+                .filter(\.isFavorite)
+                .sorted {
+                    $0.sortOrder == $1.sortOrder
+                        ? $0.dateAdded > $1.dateAdded
+                        : $0.sortOrder < $1.sortOrder
+                }
             
             debugLog("🔍 Widget: Trouvé \(vouchers.count) cartes favorites")
             

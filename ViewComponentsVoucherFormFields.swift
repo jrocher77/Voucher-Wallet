@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import SwiftData
 
 /// Composant réutilisable pour les champs de formulaire d'un bon
 struct VoucherFormFields: View {

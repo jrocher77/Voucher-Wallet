@@ -6,24 +6,32 @@
 //
 
 import SwiftUI
-import SwiftData
+import CoreData
+import Combine
 
 struct VoucherDetailView: View {
     let voucher: Voucher
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
+    @Environment(VoucherSharingManager.self) private var sharingManager
+    @Environment(\.managedObjectContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @State private var initialBrightness: Double = 0.5
     @State private var isBrightnessMaximized = false
     @State private var showingDeleteAlert = false
     @State private var showingPDFViewer = false
-    @State private var showingShareSheet = false
+    @State private var showingSharingDisclaimer = false
+    @State private var showingCloudSharing = false
+    @State private var isPreparingCloudSharing = false
     @State private var showingEditView = false
     @State private var expenseToPresent: ExpensePresentation?
     @State private var isVoucherDeleted = false
     @State private var favoritesManager: FavoritesManager?
     @State private var showingFavoriteLimitAlert = false
     @State private var currentFavorites: [Voucher] = []
+    @State private var isScreenCaptured = false
+    @State private var favoriteRevision = 0
+    @State private var expenseRevision = 0
+    @State private var voucherRevision = 0
     
     enum ExpensePresentation: Identifiable {
         case new
@@ -38,7 +46,7 @@ struct VoucherDetailView: View {
             }
         }
     }
-    
+
     var isExpired: Bool {
         guard let expiration = voucher.expirationDate else { return false }
         let calendar = Calendar.current
@@ -56,6 +64,17 @@ struct VoucherDetailView: View {
                 }
         } else {
             contentView
+                .overlay {
+                    if isScreenCaptured && voucher.isInActiveShare {
+                        ContentUnavailableView(
+                            "Contenu masqué",
+                            systemImage: "eye.slash.fill",
+                            description: Text("Le bon est masqué pendant la recopie ou l'enregistrement de l'écran.")
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(.background)
+                    }
+                }
         }
     }
     
@@ -98,6 +117,7 @@ struct VoucherDetailView: View {
                 
                 // Informations détaillées
                 detailsSection
+                    .id(voucherRevision)
                 
                 // Actions
                 actionsSection
@@ -112,18 +132,30 @@ struct VoucherDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button(action: toggleFavorite) {
-                        Label(voucher.isFavorite ? "Retirer des favoris" : "Ajouter aux favoris", 
-                              systemImage: voucher.isFavorite ? "star.fill" : "star")
+                        Label(isFavorite ? "Retirer des favoris" : "Ajouter aux favoris",
+                              systemImage: isFavorite ? "star.fill" : "star")
                     }
-                    
-                    Button(action: { showingEditView = true }) {
-                        Label("Modifier", systemImage: "pencil")
+
+                    if !voucher.isReceivedShare {
+                        Button(action: { showingEditView = true }) {
+                            Label("Modifier", systemImage: "pencil")
+                        }
                     }
                     
                     Divider()
                     
-                    Button(role: .destructive, action: { showingDeleteAlert = true }) {
-                        Label("Supprimer", systemImage: "trash")
+                    if voucher.isReceivedShare {
+                        Button(role: .destructive, action: {
+                            isVoucherDeleted = true
+                            dismiss()
+                            sharingManager.removeReceivedVoucher(voucher, after: 0.35)
+                        }) {
+                            Label("Quitter le partage", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } else {
+                        Button(role: .destructive, action: { showingDeleteAlert = true }) {
+                            Label("Supprimer", systemImage: "trash")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -133,8 +165,8 @@ struct VoucherDetailView: View {
             /*
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: toggleFavorite) {
-                    Image(systemName: voucher.isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(voucher.isFavorite ? .yellow : .primary)
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(isFavorite ? .yellow : .primary)
                         .font(.title3)
                         .symbolEffect(.bounce, value: voucher.isFavorite)
                 }
@@ -154,6 +186,16 @@ struct VoucherDetailView: View {
         } message: {
             Text("Vous ne pouvez avoir que 4 cartes en favoris. Veuillez d'abord retirer une carte des favoris.")
         }
+        .alert("Partage iCloud", isPresented: Binding(
+            get: { sharingManager.lastErrorMessage != nil },
+            set: { if !$0 { sharingManager.lastErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {
+                sharingManager.lastErrorMessage = nil
+            }
+        } message: {
+            Text(sharingManager.lastErrorMessage ?? "")
+        }
         .onAppear {
             // Enregistrer la luminosité initiale de manière asynchrone
             Task { @MainActor in
@@ -166,25 +208,50 @@ struct VoucherDetailView: View {
                 if favoritesManager == nil {
                     favoritesManager = FavoritesManager(modelContext: modelContext)
                 }
+                isScreenCaptured = UIScreen.main.isCaptured
             }
         }
         .onDisappear {
             // Restaurer la luminosité d'origine
             restoreBrightness()
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            // Restaurer la luminosité quand l'app passe en arrière-plan
-            if newPhase == .background || newPhase == .inactive {
-                restoreBrightness()
+            .onChange(of: scenePhase) { oldPhase, newPhase in
+                // Restaurer la luminosité quand l'app passe en arrière-plan
+                if newPhase == .background || newPhase == .inactive {
+                    restoreBrightness()
+                } else if newPhase == .active && voucher.isInActiveShare {
+                    sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
+                }
             }
+        .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
+            isScreenCaptured = UIScreen.main.isCaptured
         }
+        .modifier(VoucherDetailRefreshEvents(
+            voucher: voucher,
+            sharingManager: sharingManager,
+            modelContext: modelContext,
+            favoriteRevision: $favoriteRevision,
+            expenseRevision: $expenseRevision,
+            voucherRevision: $voucherRevision,
+            isVoucherDeleted: $isVoucherDeleted
+        ))
         .sheet(isPresented: $showingPDFViewer) {
             if let pdfData = voucher.pdfData {
-                PDFViewerView(pdfData: pdfData)
+                PDFViewerView(
+                    pdfData: pdfData,
+                    allowsSharing: !voucher.isReceivedShare,
+                    masksWhenCaptured: voucher.isInActiveShare
+                )
             }
         }
-        .sheet(isPresented: $showingShareSheet) {
-            ShareSheetView(items: createShareItems())
+        .background {
+            CloudVoucherSharingPresenter(
+                isPresented: $showingCloudSharing,
+                isPreparing: $isPreparingCloudSharing,
+                voucher: voucher,
+                manager: sharingManager
+            )
+            .frame(width: 0, height: 0)
         }
         .sheet(isPresented: $showingEditView) {
             EditVoucherView(voucher: voucher)
@@ -194,18 +261,35 @@ struct VoucherDetailView: View {
             case .new:
                 AddExpenseView(voucher: voucher, onVoucherDeleted: {
                     isVoucherDeleted = true
+                }, onExpenseSaved: {
+                    modelContext.refresh(voucher, mergeChanges: true)
+                    expenseRevision += 1
                 })
             case .edit(let expense):
                 AddExpenseView(voucher: voucher, expense: expense, onVoucherDeleted: {
                     isVoucherDeleted = true
+                }, onExpenseSaved: {
+                    modelContext.refresh(voucher, mergeChanges: true)
+                    expenseRevision += 1
                 })
             }
+        }
+        .alert("Partager ce bon ?", isPresented: $showingSharingDisclaimer) {
+            Button("Annuler", role: .cancel) {}
+            Button("Continuer le partage") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showingCloudSharing = true
+                }
+            }
+        } message: {
+            Text("Ce bon peut être utilisé comme moyen de paiement. Les personnes invitées pourront consulter et utiliser son numéro, son code, son QR Code ou code-barres ainsi que son PDF éventuel.\n\nDans la fenêtre suivante, conservez le mode Collaborer. Pour une meilleure expérience, privilégiez l'envoi de l'invitation via Messages ou Mail.")
         }
     }
     
     private var headerCardSection: some View {
         ZStack(alignment: .topLeading) {
             VoucherCardView(voucher: voucher, showsFavoriteIcon: false)
+                .id("\(expenseRevision)-\(favoriteRevision)-\(voucherRevision)")
                 .frame(height: 200)
             
             Button(action: toggleFavorite) {
@@ -213,9 +297,9 @@ struct VoucherDetailView: View {
                     Color.black.opacity(0.001)
                         .frame(width: 56, height: 56)
                     
-                    Image(systemName: voucher.isFavorite ? "star.fill" : "star")
+                    Image(systemName: isFavorite ? "star.fill" : "star")
                         .font(.title2)
-                        .foregroundStyle(voucher.isFavorite ? .yellow : Color(hex: voucher.textColor).opacity(0.9))
+                        .foregroundStyle(isFavorite ? .yellow : Color(hex: voucher.textColor).opacity(0.9))
                         .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
                         .symbolEffect(.bounce, value: voucher.isFavorite)
                 }
@@ -367,17 +451,19 @@ struct VoucherDetailView: View {
     
     private var actionsSection: some View {
         VStack(spacing: 12) {
-            Button {
-                showingEditView = true
-            } label: {
-                Label("Modifier le bon", systemImage: "pencil")
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue.opacity(0.1))
-                    .foregroundColor(.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            if !voucher.isReceivedShare {
+                Button {
+                    showingEditView = true
+                } label: {
+                    Label("Modifier le bon", systemImage: "pencil")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue.opacity(0.1))
+                        .foregroundColor(.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             
             if voucher.pdfData != nil {
                 Button {
@@ -392,16 +478,32 @@ struct VoucherDetailView: View {
                 .buttonStyle(.plain)
             }
             
-            Button {
-                showingShareSheet = true
-            } label: {
-                Label("Partager", systemImage: "square.and.arrow.up")
+            if !voucher.isReceivedShare {
+                Button {
+                    guard !isPreparingCloudSharing else { return }
+                    if voucher.isInActiveShare {
+                        showingCloudSharing = true
+                    } else {
+                        showingSharingDisclaimer = true
+                    }
+                } label: {
+                    HStack {
+                        if isPreparingCloudSharing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "person.2")
+                        }
+                        Text(isPreparingCloudSharing ? "Préparation du partage..." : (voucher.isInActiveShare ? "Gérer le partage" : "Partager"))
+                    }
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color(.systemGray6))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+                .disabled(isPreparingCloudSharing)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal)
     }
@@ -411,15 +513,24 @@ struct VoucherDetailView: View {
     private var balanceSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Historique des dépenses
-            if !voucher.expensesList.isEmpty {
+            let expenses = currentExpenses
+            if !expenses.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Historique")
                         .font(.headline)
                         .padding(.horizontal)
                     
-                    ForEach(voucher.expensesList.sorted(by: { $0.date > $1.date })) { expense in
-                        ExpenseRow(expense: expense, modelContext: modelContext) {
+                    ForEach(expenses) { expense in
+                        ExpenseRow(
+                            date: expense.date,
+                            note: expense.note,
+                            authorDisplayName: expense.authorDisplayName,
+                            amount: expense.amount,
+                            canModify: canModify(expense)
+                        ) {
                             expenseToPresent = .edit(expense)
+                        } onDelete: {
+                            deleteExpense(with: expense.objectID)
                         }
                     }
                     .padding(.horizontal)
@@ -438,50 +549,70 @@ struct VoucherDetailView: View {
         // Sinon, générer l'image à la volée
         return BarcodeGenerator.generateCode(for: voucher)
     }
-    
-    private func createShareItems() -> [Any] {
-        var items: [Any] = []
-        
-        // Ajouter le texte avec les infos du bon
-        var text = """
-        Bon d'achat \(voucher.storeName)
-        Numéro: \(voucher.voucherNumber)
-        """
-        
-        if let amount = voucher.amount {
-            text += "\nMontant: \(amount.formattedEuro)"
-        }
-        
-        if let pin = voucher.pinCode {
-            text += "\nCode PIN: \(pin)"
-        }
-        
-        items.append(text)
-        
-        // Ajouter l'image du code-barres
-        if let codeImageData = voucher.codeImageData,
-           let codeImage = BarcodeGenerator.dataToImage(codeImageData) {
-            items.append(codeImage)
-        }
-        
-        // Ajouter le PDF si disponible
-        if let pdfData = voucher.pdfData {
-            items.append(pdfData)
-        }
-        
-        return items
+
+    private var isFavorite: Bool {
+        _ = favoriteRevision
+        return voucher.isFavorite
+    }
+
+    private var currentExpenses: [Expense] {
+        _ = expenseRevision
+        return voucher.expensesList.sorted(by: { $0.date > $1.date })
     }
     
     private func deleteVoucher() {
-        modelContext.delete(voucher)
-        try? modelContext.save()
-        
-        // Recharger le widget si la carte était en favori
-        if voucher.isFavorite {
-            WidgetReloader.reloadFavoriteVouchersWidget()
-        }
-        
+        let objectID = voucher.objectID
+        let voucherID = voucher.id
+        let wasFavorite = voucher.isFavorite
+        isVoucherDeleted = true
         dismiss()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
+            sharingManager.revokeIfNeeded(for: voucherToDelete)
+            voucherToDelete.deletePersonalPreference(in: modelContext)
+            modelContext.delete(voucherToDelete)
+
+            do {
+                try modelContext.save()
+                NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+                if wasFavorite {
+                    WidgetReloader.reloadFavoriteVouchersWidget()
+                }
+            } catch {
+                debugLog("❌ Erreur lors de la suppression du bon: \(error)")
+            }
+        }
+    }
+
+    private func canModify(_ expense: Expense) -> Bool {
+        guard voucher.isReceivedShare else { return true }
+        return expense.authorRecordName != nil &&
+            expense.authorRecordName == sharingManager.authorIdentifier
+    }
+
+    private func deleteExpense(with objectID: NSManagedObjectID) {
+        let shouldReloadFavoriteWidget = voucher.isFavorite
+        guard let expense = try? modelContext.existingObject(with: objectID) as? Expense else {
+            modelContext.refresh(voucher, mergeChanges: true)
+            expenseRevision += 1
+            return
+        }
+        modelContext.delete(expense)
+
+        do {
+            try modelContext.save()
+            modelContext.refresh(voucher, mergeChanges: true)
+            expenseRevision += 1
+            voucherRevision += 1
+            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
+            if shouldReloadFavoriteWidget {
+                WidgetReloader.reloadFavoriteVouchersWidget()
+            }
+        } catch {
+            debugLog("❌ Erreur lors de la suppression de la dépense: \(error)")
+        }
     }
     
     private func toggleFavorite() {
@@ -605,20 +736,35 @@ struct DetailRow: View {
 // MARK: - Expense Row
 
 struct ExpenseRow: View {
-    let expense: Expense
-    let modelContext: ModelContext
+    let date: Date
+    let note: String?
+    let authorDisplayName: String?
+    let amount: Double
+    let canModify: Bool
     let onEdit: () -> Void
+    let onDelete: () -> Void
     
     @State private var showingDeleteAlert = false
     
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(expense.date.frenchLongFormat)
+                Text(date.frenchLongFormat)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
+
+                if let author = authorDisplayName, !author.isEmpty {
+                    Text(author)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+                }
+
+                Text(date.formatted(date: .omitted, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 
-                if let note = expense.note, !note.isEmpty {
+                if let note, !note.isEmpty {
                     Text(note)
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -627,22 +773,24 @@ struct ExpenseRow: View {
             
             Spacer()
             
-            Text("- \(expense.amount.formattedEuro)")
+            Text("- \(amount.formattedEuro)")
                 .font(.body)
                 .fontWeight(.semibold)
                 .foregroundColor(.red)
             
-            Menu {
-                Button(action: onEdit) {
-                    Label("Modifier", systemImage: "pencil")
+            if canModify {
+                Menu {
+                    Button(action: onEdit) {
+                        Label("Modifier", systemImage: "pencil")
+                    }
+
+                    Button(role: .destructive, action: { showingDeleteAlert = true }) {
+                        Label("Supprimer", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.blue)
                 }
-                
-                Button(role: .destructive, action: { showingDeleteAlert = true }) {
-                    Label("Supprimer", systemImage: "trash")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundColor(.blue)
             }
         }
         .padding()
@@ -651,24 +799,68 @@ struct ExpenseRow: View {
         .alert("Supprimer cette dépense ?", isPresented: $showingDeleteAlert) {
             Button("Annuler", role: .cancel) { }
             Button("Supprimer", role: .destructive) {
-                deleteExpense()
+                onDelete()
             }
         } message: {
             Text("Cette action est irréversible.")
         }
     }
-    
-    private func deleteExpense() {
-        let shouldReloadFavoriteWidget = expense.voucher?.isFavorite ?? false
-        modelContext.delete(expense)
-        
-        do {
-            try modelContext.save()
-            if shouldReloadFavoriteWidget {
-                WidgetReloader.reloadFavoriteVouchersWidget()
+}
+
+private struct VoucherDetailRefreshEvents: ViewModifier {
+    let voucher: Voucher
+    let sharingManager: VoucherSharingManager
+    let modelContext: NSManagedObjectContext
+    @Binding var favoriteRevision: Int
+    @Binding var expenseRevision: Int
+    @Binding var voucherRevision: Int
+    @Binding var isVoucherDeleted: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: FavoritesManager.favoritesDidChange)) { _ in
+                favoriteRevision += 1
             }
-        } catch {
-            debugLog("❌ Erreur lors de la suppression de la dépense: \(error)")
+            .onReceive(NotificationCenter.default.publisher(for: .voucherExpensesDidChange)) { notification in
+                guard notification.object as? UUID == voucher.id else { return }
+                refresh(reloadExpenses: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
+                if let voucherID = notification.object as? UUID, voucherID != voucher.id {
+                    return
+                }
+                refresh(reloadVoucher: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherSharingDidChange)) { notification in
+                if let voucherID = notification.object as? UUID, voucherID != voucher.id {
+                    return
+                }
+                favoriteRevision += 1
+                refresh(reloadVoucher: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
+                guard voucher.isInActiveShare else { return }
+                refresh(reloadExpenses: true, reloadVoucher: true)
+            }
+    }
+
+    private func refresh(reloadExpenses: Bool = false, reloadVoucher: Bool = false) {
+        modelContext.processPendingChanges()
+        if voucher.isDeleted || voucher.managedObjectContext == nil {
+            isVoucherDeleted = true
+            return
+        }
+        modelContext.refresh(voucher, mergeChanges: true)
+        sharingManager.reconcileSharingStates()
+        if voucher.isDeleted || voucher.managedObjectContext == nil {
+            isVoucherDeleted = true
+            return
+        }
+        if reloadExpenses {
+            expenseRevision += 1
+        }
+        if reloadVoucher {
+            voucherRevision += 1
         }
     }
 }
@@ -694,6 +886,7 @@ struct ShareSheetView: UIViewControllerRepresentable {
 #Preview {
     NavigationStack {
         VoucherDetailView(voucher: Voucher(
+            context: PreviewData.shared.container.viewContext,
             storeName: "Carrefour",
             amount: 50.0,
             voucherNumber: "1234567890123",
@@ -703,4 +896,6 @@ struct ShareSheetView: UIViewControllerRepresentable {
             storeColor: "#0055A5"
         ))
     }
+    .environment(\.managedObjectContext, PreviewData.shared.container.viewContext)
+    .environment(VoucherSharingManager(persistence: PreviewData.shared.persistence))
 }

@@ -6,15 +6,16 @@
 //
 
 import Foundation
-import SwiftData
+import CoreData
 import SwiftUI
 
 @Observable
 final class FavoritesManager {
-    private let modelContext: ModelContext
+    private let modelContext: NSManagedObjectContext
     static let maxFavorites = 4
+    static let favoritesDidChange = Notification.Name("FavoritesManager.favoritesDidChange")
     
-    init(modelContext: ModelContext) {
+    init(modelContext: NSManagedObjectContext) {
         self.modelContext = modelContext
     }
     
@@ -23,7 +24,7 @@ final class FavoritesManager {
         if voucher.isFavorite {
             // Retirer des favoris
             voucher.isFavorite = false
-            try? modelContext.save()
+            saveAndNotifyChange()
             return .removed
         } else {
             // Vérifier si on peut ajouter
@@ -36,26 +37,37 @@ final class FavoritesManager {
             voucher.isFavorite = true
             let maxSortOrder = currentFavorites.map(\.sortOrder).max() ?? -1
             voucher.sortOrder = maxSortOrder + 1
-            try? modelContext.save()
+            saveAndNotifyChange()
             return .added
         }
     }
     
     /// Récupère tous les vouchers favoris
     func getFavoriteVouchers() -> [Voucher] {
-        let descriptor = FetchDescriptor<Voucher>(
-            predicate: #Predicate { $0.isFavorite == true },
-            sortBy: [
-                SortDescriptor(\.sortOrder, order: .forward),
-                SortDescriptor(\.dateAdded, order: .reverse)
-            ]
-        )
-        
         do {
-            return try modelContext.fetch(descriptor)
+            let request = Voucher.fetchRequest()
+            let vouchers = try modelContext.fetch(request).filter(\.isFavorite)
+            return vouchers.sorted {
+                $0.sortOrder == $1.sortOrder
+                    ? $0.dateAdded > $1.dateAdded
+                    : $0.sortOrder < $1.sortOrder
+            }
         } catch {
             debugLog("Erreur lors de la récupération des favoris: \(error)")
             return []
+        }
+    }
+
+    static func notifyChange() {
+        NotificationCenter.default.post(name: favoritesDidChange, object: nil)
+    }
+
+    private func saveAndNotifyChange() {
+        do {
+            try modelContext.save()
+            Self.notifyChange()
+        } catch {
+            debugLog("Erreur lors de la sauvegarde des favoris: \(error)")
         }
     }
     

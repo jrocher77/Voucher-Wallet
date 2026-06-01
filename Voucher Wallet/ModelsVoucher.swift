@@ -42,7 +42,10 @@ final class Voucher: NSManagedObject, Identifiable {
     }
 
     var activeExpensesList: [Expense] {
-        Array(expenses ?? [])
+        var seenIDs = Set<UUID>()
+        return Array(expenses ?? []).filter { expense in
+            seenIDs.insert(expense.id).inserted
+        }
     }
 
     var expensesList: [Expense] {
@@ -51,7 +54,9 @@ final class Voucher: NSManagedObject, Identifiable {
 
     var remainingBalance: Double {
         guard let initialAmount = amount else { return 0 }
-        return initialAmount - spentBeforeCurrentShare - activeExpensesList.reduce(0) { $0 + $1.amount }
+        let balance = initialAmount - spentBeforeCurrentShare - activeExpensesList.reduce(0) { $0 + $1.amount }
+        let cents = Int((balance * 100).rounded())
+        return cents == 0 ? 0 : Double(cents) / 100
     }
 
     var totalExpenses: Double {

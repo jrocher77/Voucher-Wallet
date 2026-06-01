@@ -104,11 +104,13 @@ struct AddExpenseView: View {
                         }
                     }
                     
-                    if !amount.isEmpty && parsedAmount == nil {
+                    if shouldShowAmountValidation && !amount.isEmpty && parsedAmount == nil {
                         Label("Saisissez un montant valide (ex: 12,50)", systemImage: "exclamationmark.circle")
                             .font(.caption)
                             .foregroundStyle(.orange)
-                    } else if let parsedAmount, parsedAmount > adjustedBalance {
+                    } else if shouldShowAmountValidation,
+                              let parsedAmount,
+                              parsedAmount.currencyCents > adjustedBalance.currencyCents {
                         Label("Le montant dépasse le solde disponible", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
                             .foregroundStyle(.red)
@@ -197,7 +199,11 @@ struct AddExpenseView: View {
     }
     
     private var adjustedBalance: Double {
-        voucher.remainingBalance + (existingExpense?.amount ?? 0)
+        (voucher.remainingBalance + (existingExpense?.amount ?? 0)).roundedToCurrencyCents
+    }
+
+    private var shouldShowAmountValidation: Bool {
+        !showingDeleteVoucherAlert
     }
     
     private var isFormValid: Bool {
@@ -205,7 +211,7 @@ struct AddExpenseView: View {
             return false
         }
         
-        return expenseAmount <= adjustedBalance
+        return expenseAmount.currencyCents <= adjustedBalance.currencyCents
     }
     
     private func saveExpense() {
@@ -222,18 +228,20 @@ struct AddExpenseView: View {
         }
         
         // Vérifier qu'on ne dépasse pas le solde (sauf si on édite et qu'on réduit le montant)
-        if expenseAmount > adjustedBalance {
+        if expenseAmount.currencyCents > adjustedBalance.currencyCents {
             errorMessage = "Le montant dépasse le solde restant (\(adjustedBalance.formattedEuro))"
             showingError = true
             return
         }
         
+        let savedExpense: Expense
         if let existing = existingExpense {
             // Édition
             debugLog("🔄 Modification de la dépense existante (ID: \(existing.id))")
             existing.amount = expenseAmount
             existing.date = date
             existing.note = note.isEmpty ? nil : note
+            savedExpense = existing
             debugLog("   ✓ Montant mis à jour: \(expenseAmount)")
             debugLog("   ✓ Date mise à jour: \(date)")
             debugLog("   ✓ Note mise à jour: \(note.isEmpty ? "nil" : note)")
@@ -253,6 +261,7 @@ struct AddExpenseView: View {
             }
             SharedModelContainer.assign(expense, toStoreOf: voucher)
             expense.voucher = voucher
+            savedExpense = expense
             debugLog("   ✓ Nouvelle dépense créée (ID: \(expense.id))")
         }
         
@@ -260,6 +269,9 @@ struct AddExpenseView: View {
             try modelContext.save()
             debugLog("💾 Dépense sauvegardée avec succès")
             modelContext.refresh(voucher, mergeChanges: true)
+            if voucher.isInActiveShare {
+                sharingManager.mirrorSharedExpense(savedExpense, for: voucher)
+            }
             NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
             NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
             onExpenseSaved?()
@@ -281,19 +293,25 @@ struct AddExpenseView: View {
     
     private func deleteExpense() {
         guard let expense = existingExpense else { return }
-        modelContext.delete(expense)
-        
-        do {
-            try modelContext.save()
-            modelContext.refresh(voucher, mergeChanges: true)
-            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
-            onExpenseSaved?()
-            reloadFavoriteWidgetIfNeeded()
-            dismiss()
-        } catch {
-            errorMessage = "Erreur lors de la suppression : \(error.localizedDescription)"
-            showingError = true
+        Task { @MainActor in
+            sharingManager.rememberLocallyDeletedSharedExpense(expense)
+            if voucher.isInActiveShare {
+                await sharingManager.mirrorSharedExpenseBeforeDeleting(expense, for: voucher)
+            }
+            modelContext.delete(expense)
+
+            do {
+                try modelContext.save()
+                modelContext.refresh(voucher, mergeChanges: true)
+                NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
+                onExpenseSaved?()
+                reloadFavoriteWidgetIfNeeded()
+                dismiss()
+            } catch {
+                errorMessage = "Erreur lors de la suppression : \(error.localizedDescription)"
+                showingError = true
+            }
         }
     }
     

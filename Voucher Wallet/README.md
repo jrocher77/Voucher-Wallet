@@ -55,8 +55,8 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 - **À propos** : Version et informations de l'app
 
 ### ☁️ Synchronisation iCloud
-- **CloudKit privé** : Synchronisation automatique des bons et dépenses entre les appareils connectés au même compte iCloud
-- **Partage iCloud** : Un propriétaire peut partager un bon avec plusieurs proches depuis son détail ; les participants peuvent l'utiliser et saisir leurs propres dépenses sans modifier le bon
+- **CloudKit privé** : Synchronisation automatique des bons et dépenses entre les appareils connectés au même compte iCloud, avec traitement des notifications distantes CloudKit, bandeau discret au démarrage d'une synchronisation, avertissement si elle est impossible et alerte uniquement en cas de problème
+- **Partage iCloud** : Un propriétaire peut partager un bon avec plusieurs proches depuis son détail ; l'ouverture du partage affiche un statut d'initialisation dédié, les participants peuvent l'utiliser, saisir leurs propres dépenses et tirer la liste ou le détail vers le bas pour relire les changements partagés reçus, avec un miroir CloudKit manuel des dépenses pour fiabiliser le rafraîchissement
 - **Dépenses attribuées** : Les dépenses créées pendant un partage affichent leur auteur et leur heure de saisie
 - **Favoris personnels** : Un bon reçu peut être favori et apparaître dans le widget, sans synchroniser ce choix avec le propriétaire
 - **Récupération après changement d'iPhone** : Les données Core Data sont restaurées via iCloud quand l'application est installée sur un nouvel appareil
@@ -118,6 +118,7 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
 
 ### Stockage
 - **Core Data + CloudKit** : `NSPersistentCloudKitContainer` utilise un store privé et un store partagé afin de prendre en charge `CKShare`
+- **Miroir des dépenses partagées** : `ManagersSharedExpenseMirrorManager.swift` écrit et relit des records CloudKit `SharedExpenseMirror` pour rendre le pull-to-refresh fiable quand l'import Core Data est différé
 - **App Group** : Partage des stores Core Data locaux entre l'application et le widget
 - **Préférences personnelles** : favoris et ordre sont conservés en données privées, séparées du bon partagé
 - **UserDefaults** : Préférences d'apprentissage

@@ -116,11 +116,6 @@ final class SharedModelContainer {
     }
 
     @MainActor
-    func refreshViewContextAndNotify() {
-        requestCloudRefresh()
-    }
-
-    @MainActor
     func resetViewContextAndNotify() {
         reloadViewContextAndNotify(reason: "explicit-view-context-reset")
     }

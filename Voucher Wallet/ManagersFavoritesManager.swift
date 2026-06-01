@@ -62,6 +62,48 @@ final class FavoritesManager {
         NotificationCenter.default.post(name: favoritesDidChange, object: nil)
     }
 
+    @discardableResult
+    static func deletePersonalPreference(for voucherID: UUID, in context: NSManagedObjectContext) -> Bool {
+        let request = PersonalVoucherPreference.fetchRequest()
+        request.predicate = NSPredicate(format: "voucherID == %@", voucherID as CVarArg)
+
+        do {
+            let preferences = try context.fetch(request)
+            guard !preferences.isEmpty else { return false }
+
+            for preference in preferences {
+                context.delete(preference)
+            }
+            try context.save()
+            notifyChange()
+            return true
+        } catch {
+            debugLog("Impossible de supprimer les préférences du bon: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    @discardableResult
+    static func deleteOrphanedPreferences(in context: NSManagedObjectContext) -> Bool {
+        do {
+            let vouchers = try context.fetch(Voucher.fetchRequest())
+            let existingVoucherIDs = Set(vouchers.filter { $0.managedObjectContext != nil && !$0.isDeleted }.map(\.id))
+            let preferences = try context.fetch(PersonalVoucherPreference.fetchRequest())
+            let orphanedPreferences = preferences.filter { !existingVoucherIDs.contains($0.voucherID) }
+            guard !orphanedPreferences.isEmpty else { return false }
+
+            for preference in orphanedPreferences {
+                context.delete(preference)
+            }
+            try context.save()
+            notifyChange()
+            return true
+        } catch {
+            debugLog("Impossible de nettoyer les préférences favorites orphelines: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     private func saveAndNotifyChange() {
         do {
             try modelContext.save()

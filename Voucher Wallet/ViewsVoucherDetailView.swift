@@ -126,6 +126,9 @@ struct VoucherDetailView: View {
             }
             .padding(.bottom)
             }
+            .refreshable {
+                await refreshSharedVoucherFromPull()
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -208,6 +211,7 @@ struct VoucherDetailView: View {
                 if favoritesManager == nil {
                     favoritesManager = FavoritesManager(modelContext: modelContext)
                 }
+                refreshSharedExpenseMirrorsInBackground(reason: "detail-appear")
                 isScreenCaptured = UIScreen.main.isCaptured
             }
         }
@@ -221,6 +225,7 @@ struct VoucherDetailView: View {
                     restoreBrightness()
                 } else if newPhase == .active && voucher.isInActiveShare {
                     sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
+                    refreshSharedExpenseMirrorsInBackground(reason: "detail-scene-active")
                 }
             }
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
@@ -275,8 +280,12 @@ struct VoucherDetailView: View {
             }
         }
         .alert("Partager ce bon ?", isPresented: $showingSharingDisclaimer) {
-            Button("Annuler", role: .cancel) {}
+            Button("Annuler", role: .cancel) {
+                sharingManager.sharingStatusMessage = nil
+                sharingManager.markSharingOperationEnded()
+            }
             Button("Continuer le partage") {
+                sharingManager.beginSharingInitialization()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     showingCloudSharing = true
                 }
@@ -481,8 +490,16 @@ struct VoucherDetailView: View {
             if !voucher.isReceivedShare {
                 Button {
                     guard !isPreparingCloudSharing else { return }
+                    sharingManager.beginSharingInitialization()
                     if voucher.isInActiveShare {
-                        showingCloudSharing = true
+                        if showingCloudSharing {
+                            showingCloudSharing = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                showingCloudSharing = true
+                            }
+                        } else {
+                            showingCloudSharing = true
+                        }
                     } else {
                         showingSharingDisclaimer = true
                     }
@@ -539,6 +556,50 @@ struct VoucherDetailView: View {
         }
     }
     
+    @MainActor
+    private func refreshSharedVoucherFromPull() async {
+        guard voucher.isInActiveShare else { return }
+        sharingManager.persistence.requestCloudRefresh(minimumInterval: 0)
+        sharingManager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0])
+        _ = await sharingManager.refreshSharedExpenseMirrors(for: [voucher])
+        refreshCurrentVoucher(reloadExpenses: true, reloadVoucher: true)
+    }
+
+    private func refreshSharedExpenseMirrorsInBackground(reason: String) {
+        guard voucher.isInActiveShare else { return }
+
+        Task { @MainActor in
+            let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(for: [voucher])
+            guard mirroredChanges else { return }
+            debugLog("Miroir des dépenses du détail appliqué (\(reason))")
+            refreshCurrentVoucher(reloadExpenses: true, reloadVoucher: true)
+        }
+    }
+
+    private func refreshCurrentVoucher(reloadExpenses: Bool = false, reloadVoucher: Bool = false) {
+        modelContext.processPendingChanges()
+        guard voucher.managedObjectContext != nil, !voucher.isDeleted else {
+            isVoucherDeleted = true
+            return
+        }
+        for expense in voucher.activeExpensesList where expense.managedObjectContext != nil && !expense.isDeleted {
+            modelContext.refresh(expense, mergeChanges: false)
+        }
+        modelContext.refresh(voucher, mergeChanges: false)
+        let purgedDeletedExpenses = sharingManager.purgeLocallyDeletedSharedExpenses(for: [voucher])
+        sharingManager.reconcileSharingStates()
+        if purgedDeletedExpenses {
+            expenseRevision += 1
+            voucherRevision += 1
+        }
+        if reloadExpenses {
+            expenseRevision += 1
+        }
+        if reloadVoucher {
+            voucherRevision += 1
+        }
+    }
+
     private func generateCodeImage() -> UIImage? {
         // Si une image est déjà stockée, l'utiliser
         if let imageData = voucher.codeImageData,
@@ -598,20 +659,26 @@ struct VoucherDetailView: View {
             expenseRevision += 1
             return
         }
-        modelContext.delete(expense)
-
-        do {
-            try modelContext.save()
-            modelContext.refresh(voucher, mergeChanges: true)
-            expenseRevision += 1
-            voucherRevision += 1
-            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
-            if shouldReloadFavoriteWidget {
-                WidgetReloader.reloadFavoriteVouchersWidget()
+        Task { @MainActor in
+            sharingManager.rememberLocallyDeletedSharedExpense(expense)
+            if voucher.isInActiveShare {
+                await sharingManager.mirrorSharedExpenseBeforeDeleting(expense, for: voucher)
             }
-        } catch {
-            debugLog("❌ Erreur lors de la suppression de la dépense: \(error)")
+            modelContext.delete(expense)
+
+            do {
+                try modelContext.save()
+                modelContext.refresh(voucher, mergeChanges: true)
+                expenseRevision += 1
+                voucherRevision += 1
+                NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
+                if shouldReloadFavoriteWidget {
+                    WidgetReloader.reloadFavoriteVouchersWidget()
+                }
+            } catch {
+                debugLog("❌ Erreur lors de la suppression de la dépense: \(error)")
+            }
         }
     }
     
@@ -840,7 +907,10 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
                 guard voucher.isInActiveShare else { return }
-                refresh(reloadExpenses: true, reloadVoucher: true)
+                Task { @MainActor in
+                    _ = await sharingManager.refreshSharedExpenseMirrors(for: [voucher])
+                    refresh(reloadExpenses: true, reloadVoucher: true)
+                }
             }
     }
 

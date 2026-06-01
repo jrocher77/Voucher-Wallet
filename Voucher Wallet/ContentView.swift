@@ -8,6 +8,7 @@
 import SwiftUI
 import CoreData
 import Combine
+import Network
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -33,15 +34,23 @@ struct ContentView: View {
     @State private var favoriteRevision = 0
     @State private var cloudRefreshStatus: CloudRefreshStatus?
     @State private var cloudRefreshStatusToken = UUID()
+    @State private var lastCloudSyncBannerDate = Date.distantPast
+    @State private var remoteTransactionRevision = 0
     @State private var sharingStatusToken = UUID()
     @State private var receivedSharedVouchers: [Voucher] = []
     @State private var receivedShareRevision = 0
+    @State private var cloudNetworkMonitor = NWPathMonitor()
+    @State private var cloudNetworkMonitorQueue = DispatchQueue(label: "VoucherWallet.CloudNetworkMonitor")
+    @State private var isCloudNetworkAvailable = true
+    @State private var didStartCloudNetworkMonitor = false
 
     private let favoriteChangeAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
 
     private enum CloudRefreshStatus: Equatable {
         case syncing
         case completed
+        case noRemoteData
+        case offline
         case failed
 
         var text: String {
@@ -50,19 +59,12 @@ struct ContentView: View {
                 return "Synchronisation iCloud en cours..."
             case .completed:
                 return "Synchronisation iCloud terminée"
+            case .noRemoteData:
+                return "Aucune nouvelle donnée iCloud"
+            case .offline:
+                return "Synchronisation impossible"
             case .failed:
-                return "Synchronisation iCloud impossible"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .syncing:
-                return "Les changements peuvent arriver dans quelques secondes."
-            case .completed:
-                return "Le wallet est à jour avec les dernières données reçues."
-            case .failed:
-                return "Réessayez dans quelques secondes."
+                return "iCloud indisponible"
             }
         }
 
@@ -72,6 +74,10 @@ struct ContentView: View {
                 return "arrow.triangle.2.circlepath.icloud"
             case .completed:
                 return "checkmark.icloud"
+            case .noRemoteData:
+                return "icloud.slash"
+            case .offline:
+                return "wifi.slash"
             case .failed:
                 return "exclamationmark.icloud"
             }
@@ -116,7 +122,7 @@ struct ContentView: View {
             self.storeName = voucher.storeName
             self.voucherNumber = voucher.voucherNumber
             self.amount = amount
-            let remainingBalance = amount.map { $0 - voucher.spentBeforeCurrentShare - activeTotal } ?? 0
+            let remainingBalance = (amount.map { $0 - voucher.spentBeforeCurrentShare - activeTotal } ?? 0).roundedToCurrencyCents
             self.remainingBalance = remainingBalance
             self.totalExpenses = amount.map { $0 - remainingBalance } ?? activeTotal
             self.expirationDate = voucher.expirationDate
@@ -321,10 +327,12 @@ struct ContentView: View {
                 Text(sharingManager.lastErrorMessage ?? "")
             }
             .onAppear {
+                startCloudNetworkMonitoringIfNeeded()
                 if favoritesManager == nil {
                     favoritesManager = FavoritesManager(modelContext: modelContext)
                 }
                 reloadReceivedSharedVouchers(reason: "wallet-appear")
+                refreshSharedExpenseMirrorsInBackground(reason: "wallet-appear")
                 initializeSortOrderIfNeeded()
             }
             .onReceive(NotificationCenter.default.publisher(for: FavoritesManager.favoritesDidChange)) { _ in
@@ -339,21 +347,27 @@ struct ContentView: View {
                 reloadReceivedSharedVouchers(reason: "share-accepted")
                 favoriteRevision += 1
             }
-            .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { notification in
                 try? modelContext.setQueryGenerationFrom(.current)
-                modelContext.processPendingChanges()
-                reloadReceivedSharedVouchers(reason: "remote-store-change")
-                favoriteRevision += 1
+                refreshVisibleVouchers(reason: "remote-store-change")
+                let cleanedFavoritePreferences = FavoritesManager.deleteOrphanedPreferences(in: modelContext)
+                if cleanedFavoritePreferences {
+                    favoriteRevision += 1
+                }
+                WidgetReloader.reloadAllWidgets()
+                refreshSharedExpenseMirrorsInBackground(reason: "remote-store-change")
+                let transactionCount = notification.userInfo?["transactionCount"] as? Int ?? 0
+                if transactionCount > 0 {
+                    remoteTransactionRevision += transactionCount
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: SharedModelContainer.cloudSyncStatusNotificationName)) { notification in
                 guard let status = notification.object as? String else { return }
                 switch status {
                 case "started":
-                    showCloudRefreshStatus(.syncing)
-                case "finished":
-                    showCloudRefreshStatus(.completed)
+                    showCloudSyncStartedStatusIfNeeded()
                 case "failed":
-                    showCloudRefreshStatus(.failed)
+                    showCloudRefreshStatus(.failed, autoHideAfter: 8)
                 default:
                     break
                 }
@@ -379,12 +393,19 @@ struct ContentView: View {
                 favoriteRevision += 1
             }
             .onChange(of: sharingManager.sharingStatusMessage) { _, newValue in
+                if newValue != nil {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        cloudRefreshStatus = nil
+                    }
+                }
                 scheduleSharingStatusAutoHide(for: newValue)
             }
             .onChange(of: scenePhase) { _, newPhase in
                 guard newPhase == .active else { return }
+                startCloudNetworkMonitoringIfNeeded()
                 sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
                 reloadReceivedSharedVouchers(reason: "scene-active")
+                refreshSharedExpenseMirrorsInBackground(reason: "scene-active")
             }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
@@ -395,11 +416,60 @@ struct ContentView: View {
         }
     }
 
-    private func refreshVisibleVouchers() {
+    private func refreshSharedExpenseMirrorsInBackground(reason: String) {
+        let sharedVouchers = vouchers.filter(\.isInActiveShare)
+        guard !sharedVouchers.isEmpty else { return }
+
+        Task { @MainActor in
+            let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(for: sharedVouchers)
+            guard mirroredChanges else { return }
+            debugLog("Miroir des dépenses partagées appliqué (\(reason))")
+            refreshVisibleVouchers(reason: "shared-expense-mirror-\(reason)")
+        }
+    }
+
+    private func refreshVisibleVouchers(reason: String = "wallet-refresh-event") {
+        let visibleVouchers = vouchers
         modelContext.processPendingChanges()
+        for voucher in visibleVouchers where voucher.managedObjectContext != nil && !voucher.isDeleted {
+            refreshVoucherGraph(voucher)
+        }
+        modelContext.processPendingChanges()
+        let purgedDeletedExpenses = sharingManager.purgeLocallyDeletedSharedExpenses(for: visibleVouchers)
         sharingManager.reconcileSharingStates()
-        reloadReceivedSharedVouchers(reason: "wallet-refresh-event")
+        reloadReceivedSharedVouchers(reason: reason)
         favoriteRevision += 1
+        if purgedDeletedExpenses {
+            WidgetReloader.reloadAllWidgets()
+        }
+    }
+
+    private func refreshVoucherGraph(_ voucher: Voucher) {
+        for expense in voucher.activeExpensesList where expense.managedObjectContext != nil && !expense.isDeleted {
+            modelContext.refresh(expense, mergeChanges: false)
+        }
+        modelContext.refresh(voucher, mergeChanges: false)
+    }
+
+    @MainActor
+    private func refreshSharedVouchersFromPull() async {
+        let startingRevision = remoteTransactionRevision
+        let sharedVouchers = vouchers.filter(\.isInActiveShare)
+
+        showCloudRefreshStatus(.syncing)
+        sharingManager.persistence.requestCloudRefresh(minimumInterval: 0)
+        sharingManager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0])
+
+        let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(for: sharedVouchers)
+        refreshVisibleVouchers(reason: "manual-pull-refresh")
+
+        if remoteTransactionRevision > startingRevision || mirroredChanges {
+            showCloudRefreshStatus(.completed)
+            WidgetReloader.reloadAllWidgets()
+        } else {
+            debugLog("Pull-to-refresh iCloud terminé sans transaction distante fusionnée ni miroir de dépense")
+            showCloudRefreshStatus(.noRemoteData, autoHideAfter: 5)
+        }
     }
 
     private func reloadReceivedSharedVouchers(reason: String) {
@@ -457,6 +527,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
             .padding()
         }
+        .refreshable {
+            await refreshSharedVouchersFromPull()
+        }
     }
     
     @ViewBuilder
@@ -499,6 +572,9 @@ struct ContentView: View {
             .animation(favoriteChangeAnimation, value: sections.favorites.map(\.id))
             .animation(favoriteChangeAnimation, value: sections.others.map(\.id))
         }
+        .refreshable {
+            await refreshSharedVouchersFromPull()
+        }
     }
 
     @ViewBuilder
@@ -538,23 +614,56 @@ struct ContentView: View {
     }
 
     private var compactCloudStatus: CompactCloudStatus? {
-        if let cloudRefreshStatus {
+        if let message = sharingManager.sharingStatusMessage {
+            let isLoading = message.contains("...")
+                || message.contains("synchronisation")
+                || message.contains("Acceptation")
+                || message.contains("Initialisation")
             return CompactCloudStatus(
-                text: cloudRefreshStatus.text,
-                systemImage: cloudRefreshStatus.systemImage,
-                tint: cloudRefreshStatus == .failed ? .red : .green,
-                isLoading: cloudRefreshStatus == .syncing
+                text: message,
+                systemImage: "person.2.badge.gearshape",
+                tint: .blue,
+                isLoading: isLoading
             )
         }
 
-        guard let message = sharingManager.sharingStatusMessage else { return nil }
-        let isLoading = message.contains("...") || message.contains("synchronisation") || message.contains("Acceptation")
+        guard let cloudRefreshStatus else { return nil }
         return CompactCloudStatus(
-            text: message,
-            systemImage: "person.2.badge.gearshape",
-            tint: .blue,
-            isLoading: isLoading
+            text: cloudRefreshStatus.text,
+            systemImage: cloudRefreshStatus.systemImage,
+            tint: cloudRefreshStatus == .failed || cloudRefreshStatus == .noRemoteData || cloudRefreshStatus == .offline ? .orange : .green,
+            isLoading: cloudRefreshStatus == .syncing
         )
+    }
+
+    private func startCloudNetworkMonitoringIfNeeded() {
+        guard !didStartCloudNetworkMonitor else { return }
+        didStartCloudNetworkMonitor = true
+        cloudNetworkMonitor.pathUpdateHandler = { path in
+            DispatchQueue.main.async {
+                let isAvailable = path.status == .satisfied
+                isCloudNetworkAvailable = isAvailable
+                if !isAvailable, cloudRefreshStatus == .syncing {
+                    showCloudRefreshStatus(.offline, autoHideAfter: 6)
+                }
+            }
+        }
+        cloudNetworkMonitor.start(queue: cloudNetworkMonitorQueue)
+    }
+
+    private func showCloudSyncStartedStatusIfNeeded() {
+        let now = Date()
+        guard now.timeIntervalSince(lastCloudSyncBannerDate) >= 10 else {
+            return
+        }
+
+        lastCloudSyncBannerDate = now
+        if isCloudNetworkAvailable {
+            guard cloudRefreshStatus != .syncing else { return }
+            showCloudRefreshStatus(.syncing, autoHideAfter: 4)
+        } else {
+            showCloudRefreshStatus(.offline, autoHideAfter: 6)
+        }
     }
 
     @discardableResult
@@ -584,7 +693,7 @@ struct ContentView: View {
 
         guard let message else { return }
         let delay: TimeInterval
-        if message.contains("Acceptation") || message.contains("synchronisation") || message.contains("...") {
+        if message.contains("Acceptation") || message.contains("synchronisation") || message.contains("Initialisation") || message.contains("...") {
             delay = 6
         } else if message.contains("échou") || message.contains("impossible") {
             delay = 8

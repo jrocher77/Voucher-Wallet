@@ -166,7 +166,9 @@ struct FavoriteVouchersProvider: TimelineProvider {
             let container = try SharedModelContainer.create(enablesCloudSync: false)
             let context = container.viewContext
             let vouchers = try context.fetch(Voucher.fetchRequest())
-                .filter(\.isFavorite)
+                .filter { voucher in
+                    voucher.managedObjectContext != nil && !voucher.isDeleted && voucher.isFavorite
+                }
                 .sorted {
                     $0.sortOrder == $1.sortOrder
                         ? $0.dateAdded > $1.dateAdded
@@ -470,11 +472,13 @@ struct WidgetVoucherCardView: View {
     }
     
     private func formatCurrency(_ amount: Double) -> String {
+        let cents = Int((amount * 100).rounded())
+        let normalizedAmount = cents == 0 ? 0 : Double(cents) / 100
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = "EUR"
         formatter.locale = Locale(identifier: "fr_FR")
-        return formatter.string(from: NSNumber(value: amount)) ?? "0,00 €"
+        return formatter.string(from: NSNumber(value: normalizedAmount)) ?? "0,00 €"
     }
 }
 

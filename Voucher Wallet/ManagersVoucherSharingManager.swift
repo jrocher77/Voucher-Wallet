@@ -91,7 +91,11 @@ final class VoucherSharingManager {
     func markSharingStep(_ step: String) {
         UserDefaults.standard.set(step, forKey: sharingDiagnosticKey)
         UserDefaults.standard.set(true, forKey: sharingOperationActiveKey)
-        sharingStatusMessage = step
+    }
+
+    func beginSharingInitialization() {
+        sharingStatusMessage = "Initialisation du partage"
+        markSharingStep("initialisation du partage")
     }
 
     func markSharingOperationEnded() {
@@ -212,14 +216,13 @@ final class VoucherSharingManager {
     }
 
     func accept(_ metadata: CKShare.Metadata) {
-        sharingStatusMessage = "Invitation iCloud reçue"
         guard let sharedStore = persistence.sharedStore else {
             lastErrorMessage = "Le stockage iCloud partagé n'est pas disponible."
-            sharingStatusMessage = "Store partagé indisponible"
+            sharingStatusMessage = "Ajout impossible"
             return
         }
         let manager = self
-        sharingStatusMessage = "Acceptation du partage iCloud..."
+        sharingStatusMessage = "Ajout du bon partagé..."
         persistence.container.acceptShareInvitations(from: [metadata], into: sharedStore) { _, error in
             let message = error.map { "Impossible d'accepter le partage : \($0.localizedDescription)" }
             Task { @MainActor in
@@ -227,7 +230,7 @@ final class VoucherSharingManager {
                     manager.lastErrorMessage = message
                     manager.sharingStatusMessage = "Acceptation échouée"
                 } else {
-                    manager.sharingStatusMessage = "Partage accepté, synchronisation..."
+                    manager.sharingStatusMessage = "Synchronisation du bon partagé..."
                     manager.refreshAfterAcceptedShare()
                     manager.waitForAcceptedShareImport()
                     WidgetReloader.reloadAllWidgets()
@@ -242,7 +245,7 @@ final class VoucherSharingManager {
             return false
         }
 
-        sharingStatusMessage = "Lien iCloud reçu"
+        sharingStatusMessage = "Ouverture de l'invitation iCloud..."
         fetchShareMetadata(for: url, attempt: 0)
         return true
     }
@@ -256,7 +259,7 @@ final class VoucherSharingManager {
         }
 
         if delay > 0 {
-            sharingStatusMessage = "Lecture du partage iCloud..."
+            sharingStatusMessage = "Ouverture de l'invitation iCloud..."
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 work()
             }
@@ -292,7 +295,6 @@ final class VoucherSharingManager {
             }
             switch metadataResult {
             case .success(let metadata):
-                sharingStatusMessage = "Métadonnées iCloud reçues"
                 accept(metadata)
             case .failure(let error):
                 retryShareMetadataFetch(
@@ -318,7 +320,7 @@ final class VoucherSharingManager {
             return
         }
 
-        sharingStatusMessage = "Lecture du partage iCloud..."
+        sharingStatusMessage = "Ouverture de l'invitation iCloud..."
         fetchShareMetadata(for: url, attempt: nextAttempt)
     }
 
@@ -357,9 +359,9 @@ final class VoucherSharingManager {
         do {
             try context.setQueryGenerationFrom(.current)
             let count = try context.count(for: request)
-            sharingStatusMessage = "Store partagé: \(count) bon(s)"
             debugLog("Partage reçu - lecture store partagé (\(reason)): \(count) bon(s)")
             guard count > 0 else { return }
+            sharingStatusMessage = nil
             context.processPendingChanges()
             NotificationCenter.default.post(name: .voucherShareAccepted, object: nil)
             NotificationCenter.default.post(name: .voucherRemoteStoreDidChange, object: nil)
@@ -527,6 +529,8 @@ final class VoucherSharingManager {
                 if let error {
                     self.lastErrorMessage = "Impossible de quitter le partage pour le moment. Réessayez dans quelques secondes."
                     debugLog("Erreur lors de la sortie du partage: \(error.localizedDescription)")
+                } else {
+                    FavoritesManager.deletePersonalPreference(for: removal.voucherID, in: self.persistence.container.viewContext)
                 }
                 self.persistence.requestCloudRefresh()
                 NotificationCenter.default.post(name: .voucherDidChange, object: removal.voucherID)
@@ -548,6 +552,7 @@ final class VoucherSharingManager {
     func revokeIfNeeded(for voucher: Voucher) {
         guard let share = share(for: voucher), let privateStore = persistence.privateStore else { return }
         voucher.sharingStartedAt = nil
+        voucher.activeSharingPeriodID = nil
         try? persistence.container.viewContext.save()
         NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
         NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucher.id)
@@ -561,6 +566,7 @@ final class VoucherSharingManager {
 
     func markSharingStopped(for voucher: Voucher) {
         voucher.sharingStartedAt = nil
+        voucher.activeSharingPeriodID = nil
         pendingParticipantResolutionObjectIDs.remove(voucher.objectID)
         try? persistence.container.viewContext.save()
         NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
@@ -641,7 +647,16 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
         private var isPresentingCloudSharing = false
 
         func presentIfNeeded(isPresented: Bool) {
-            guard isViewLoaded, view.window != nil, isPresented, !isPresentingCloudSharing else { return }
+            if isPresented, isPresentingCloudSharing, presentedViewController == nil {
+                didFinishPresentation()
+                coordinator?.activeCloudSharingController = nil
+            }
+
+            guard isViewLoaded,
+                  view.window != nil,
+                  isPresented,
+                  !isPresentingCloudSharing,
+                  presentedViewController == nil else { return }
             presentCloudSharingController()
         }
 
@@ -653,6 +668,7 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
             let objectID = voucher.objectID
             if voucher.isInActiveShare {
                 coordinator.isPreparing.wrappedValue = true
+                manager.beginSharingInitialization()
                 manager.markSharingStep("chargement du partage existant")
                 Task { @MainActor [weak self, manager, coordinator, weak voucher] in
                     do {
@@ -681,11 +697,15 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
                 }
             } else {
                 coordinator.isPreparing.wrappedValue = true
+                manager.beginSharingInitialization()
                 manager.markSharingStep("préparation du nouveau partage")
-                Task { @MainActor [weak self, manager, coordinator] in
+                Task { @MainActor [weak self, manager, coordinator, weak voucher] in
                     do {
                         let preparedShare = try await manager.createShare(for: objectID)
                         guard let self else { return }
+                        if let voucher {
+                            manager.markSharingStarted(for: voucher, pendingParticipants: true)
+                        }
                         coordinator.isPreparing.wrappedValue = false
                         manager.markSharingStep("ouverture du nouveau partage")
                         let controller = DismissAwareCloudSharingController(
@@ -708,6 +728,7 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
             coordinator: Coordinator
         ) {
             controller.delegate = coordinator
+            coordinator.activeCloudSharingController = controller
             controller.availablePermissions = []
             controller.presentationController?.delegate = coordinator
             controller.popoverPresentationController?.sourceView = view
@@ -742,7 +763,9 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
         var isPresented: Binding<Bool>
         var isPreparing: Binding<Bool>
         weak var hostController: CloudSharingHostController?
+        var activeCloudSharingController: UICloudSharingController?
         private var didCompletePresentation = false
+        private var isUserDismissingPresentation = false
 
         init(
             manager: VoucherSharingManager,
@@ -781,18 +804,28 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
             finishCloudSharingController(csc)
         }
 
+        func presentationControllerWillDismiss(_ presentationController: UIPresentationController) {
+            isUserDismissingPresentation = true
+        }
+
         func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-            finishCloudSharingController(nil)
+            finishCloudSharingController(activeCloudSharingController)
         }
 
         func cloudSharingControllerDidTemporarilyDisappear(_ csc: UICloudSharingController) {
             guard !didCompletePresentation, let voucher = hostController?.voucher else { return }
             manager.markSharingStarted(for: voucher, pendingParticipants: true)
             manager.refreshShareState(for: voucher)
+            isPresented.wrappedValue = false
+            isPreparing.wrappedValue = false
+            manager.markSharingOperationEnded()
+            didFinishPresentation()
         }
 
         func beginPresentation() {
             didCompletePresentation = false
+            isUserDismissingPresentation = false
+            activeCloudSharingController = nil
         }
 
         func didFinishPresentation() {
@@ -807,16 +840,17 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
             guard !didCompletePresentation else { return }
             didCompletePresentation = true
 
+            let currentShare = csc?.share
+            let hasInvitedParticipants = currentShare?.hasInvitedParticipants == true
             isPresented.wrappedValue = false
             isPreparing.wrappedValue = false
             manager.markSharingOperationEnded()
 
-            if let share = csc?.share {
+            if let share = currentShare {
                 manager.restrictParticipantsToOwnerManagedInvites(in: share)
             }
 
             if let voucher = hostController?.voucher {
-                let currentShare = csc?.share
                 if forceStopped {
                     manager.markSharingStopped(for: voucher)
                 } else if didSaveShare || currentShare != nil {
@@ -827,6 +861,10 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
                 WidgetReloader.reloadAllWidgets()
             }
 
+            if didSaveShare || hasInvitedParticipants {
+                manager.markSharingStep("partage enregistré, retour à la gestion")
+            }
+            activeCloudSharingController = nil
             didFinishPresentation()
         }
     }
@@ -863,7 +901,6 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
     @MainActor
     static func accept(_ metadata: CKShare.Metadata) {
         if let activeSharingManager {
-            activeSharingManager.sharingStatusMessage = "Invitation iCloud reçue"
             activeSharingManager.accept(metadata)
         } else {
             pendingShareMetadata.append(metadata)
@@ -891,6 +928,7 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         application.registerForRemoteNotifications()
         queueLaunchShareURLIfNeeded(from: launchOptions)
+        queueLaunchRemoteNotificationIfNeeded(from: launchOptions)
         return true
     }
 
@@ -900,7 +938,11 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
         Task { @MainActor in
-            sharingManager?.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0, 6.0])
+            await Self.handleCloudKitRemoteNotification(
+                userInfo,
+                reason: "remote-notification",
+                manager: sharingManager
+            )
             completionHandler(.newData)
         }
     }
@@ -986,6 +1028,38 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
                 _ = Self.acceptShareURLIfPossible(url)
             }
         }
+    }
+
+    private func queueLaunchRemoteNotificationIfNeeded(from launchOptions: [UIApplication.LaunchOptionsKey: Any]?) {
+        guard let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any] else {
+            return
+        }
+
+        Task { @MainActor in
+            await Self.handleCloudKitRemoteNotification(
+                userInfo,
+                reason: "launch-remote-notification",
+                manager: sharingManager
+            )
+        }
+    }
+
+    @MainActor
+    private static func handleCloudKitRemoteNotification(
+        _ userInfo: [AnyHashable: Any],
+        reason: String,
+        manager: VoucherSharingManager?
+    ) async {
+        if let notification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
+            debugLog("Notification CloudKit reçue (\(reason)): type=\(notification.notificationType.rawValue), subscription=\(notification.subscriptionID ?? "inconnue")")
+        } else {
+            debugLog("Notification distante reçue sans payload CloudKit (\(reason))")
+        }
+
+        guard let manager else { return }
+        manager.persistence.requestCloudRefresh(minimumInterval: 0)
+        manager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0, 6.0])
+        manager.persistence.scheduleCloudResets(delays: [2.0, 5.0])
     }
 }
 

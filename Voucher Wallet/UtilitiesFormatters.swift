@@ -43,8 +43,18 @@ extension Date {
 }
 
 extension Double {
+    var roundedToCurrencyCents: Double {
+        let cents = currencyCents
+        return cents == 0 ? 0 : Double(cents) / 100
+    }
+
+    var currencyCents: Int {
+        Int((self * 100).rounded())
+    }
+
     /// Formate le montant en euros avec le symbole après (ex: "50,00 €")
     var formattedEuro: String {
+        let normalizedAmount = roundedToCurrencyCents
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 2
@@ -52,9 +62,9 @@ extension Double {
         formatter.decimalSeparator = ","
         formatter.groupingSeparator = " "
         
-        if let formatted = formatter.string(from: NSNumber(value: self)) {
+        if let formatted = formatter.string(from: NSNumber(value: normalizedAmount)) {
             return "\(formatted) €"
         }
-        return String(format: "%.2f €", self)
+        return String(format: "%.2f €", normalizedAmount)
     }
 }

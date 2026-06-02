@@ -64,7 +64,7 @@ struct ContentView: View {
             case .offline:
                 return "Synchronisation impossible"
             case .failed:
-                return "iCloud indisponible"
+                return "Synchronisation impossible"
             }
         }
 
@@ -367,7 +367,7 @@ struct ContentView: View {
                 case "started":
                     showCloudSyncStartedStatusIfNeeded()
                 case "failed":
-                    showCloudRefreshStatus(.failed, autoHideAfter: 8)
+                    showCloudRefreshStatus(isCloudNetworkAvailable ? .failed : .offline, autoHideAfter: 8)
                 default:
                     break
                 }

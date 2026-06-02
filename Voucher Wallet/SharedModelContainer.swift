@@ -14,6 +14,7 @@ final class SharedModelContainer {
     nonisolated static let privateConfigurationName = "Private"
     nonisolated static let sharedConfigurationName = "Shared"
     nonisolated static let cloudSyncStatusNotificationName = Notification.Name("voucherCloudSyncStatusDidChange")
+    private static let resetSharedStoreOnNextLaunchKey = "resetSharedCloudStoreOnNextLaunch"
     static weak var active: SharedModelContainer?
 
     let container: NSPersistentCloudKitContainer
@@ -33,6 +34,7 @@ final class SharedModelContainer {
             inMemory: inMemory,
             enablesCloudSync: enablesCloudSync
         )
+        Self.resetSharedStoreOnNextLaunchIfNeeded(descriptions: descriptions, inMemory: inMemory)
         container.persistentStoreDescriptions = descriptions
 
         var loadError: Error?
@@ -91,6 +93,9 @@ final class SharedModelContainer {
                 status = "finished"
             } else {
                 status = "failed"
+                if let error = event.error {
+                    NSLog("[VoucherWallet][iCloud] Evenement CloudKit echoue (%@): %@", String(describing: event.type), error.localizedDescription)
+                }
             }
 
             NotificationCenter.default.post(
@@ -113,6 +118,11 @@ final class SharedModelContainer {
 
     static func create(inMemory: Bool = false, enablesCloudSync: Bool = true) throws -> NSPersistentCloudKitContainer {
         try SharedModelContainer(inMemory: inMemory, enablesCloudSync: enablesCloudSync).container
+    }
+
+    func markSharedStoreForResetOnNextLaunch(reason: String) {
+        UserDefaults.standard.set(true, forKey: Self.resetSharedStoreOnNextLaunchKey)
+        NSLog("[VoucherWallet][iCloud] Store partagé marqué pour réinitialisation au prochain lancement (%@)", reason)
     }
 
     @MainActor
@@ -255,6 +265,36 @@ final class SharedModelContainer {
         }
 
         return [privateDescription, sharedDescription]
+    }
+
+    private static func resetSharedStoreOnNextLaunchIfNeeded(
+        descriptions: [NSPersistentStoreDescription],
+        inMemory: Bool
+    ) {
+        guard !inMemory,
+              UserDefaults.standard.bool(forKey: resetSharedStoreOnNextLaunchKey),
+              let sharedURL = descriptions.first(where: { $0.configuration == sharedConfigurationName })?.url else {
+            return
+        }
+
+        let fileManager = FileManager.default
+        let candidates = [
+            sharedURL,
+            URL(fileURLWithPath: sharedURL.path + "-shm"),
+            URL(fileURLWithPath: sharedURL.path + "-wal"),
+            URL(fileURLWithPath: sharedURL.path + "_SUPPORT")
+        ]
+
+        for url in candidates where fileManager.fileExists(atPath: url.path) {
+            do {
+                try fileManager.removeItem(at: url)
+            } catch {
+                NSLog("[VoucherWallet][iCloud] Réinitialisation du store partagé impossible (%@): %@", url.lastPathComponent, error.localizedDescription)
+            }
+        }
+
+        UserDefaults.standard.set(false, forKey: resetSharedStoreOnNextLaunchKey)
+        NSLog("[VoucherWallet][iCloud] Store partagé local réinitialisé avant chargement")
     }
 
     private static func makeManagedObjectModel() -> NSManagedObjectModel {

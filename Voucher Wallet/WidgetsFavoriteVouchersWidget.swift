@@ -484,6 +484,7 @@ struct WidgetVoucherCardView: View {
 
 // MARK: - Preview
 
+#if DEBUG
 #Preview(as: .systemMedium) {
     FavoriteVouchersWidget()
 } timeline: {
@@ -568,3 +569,4 @@ struct WidgetVoucherCardView: View {
         ]
     )
 }
+#endif

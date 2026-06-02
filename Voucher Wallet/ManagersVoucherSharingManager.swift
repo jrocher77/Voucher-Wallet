@@ -224,10 +224,9 @@ final class VoucherSharingManager {
         let manager = self
         sharingStatusMessage = "Ajout du bon partagé..."
         persistence.container.acceptShareInvitations(from: [metadata], into: sharedStore) { _, error in
-            let message = error.map { "Impossible d'accepter le partage : \($0.localizedDescription)" }
             Task { @MainActor in
-                if let message {
-                    manager.lastErrorMessage = message
+                if let error {
+                    manager.handleShareAcceptanceError(error)
                     manager.sharingStatusMessage = "Acceptation échouée"
                 } else {
                     manager.sharingStatusMessage = "Synchronisation du bon partagé..."
@@ -237,6 +236,30 @@ final class VoucherSharingManager {
                 }
             }
         }
+    }
+
+    private func handleShareAcceptanceError(_ error: Error) {
+        debugLog("Erreur lors de l'acceptation du partage CloudKit: \(error.localizedDescription)")
+
+        if isSharedDatabaseZoneInitializationError(error) {
+            persistence.markSharedStoreForResetOnNextLaunch(reason: "acceptation-partage")
+            lastErrorMessage = """
+            Impossible d'accepter ce partage iCloud pour le moment.
+
+            Le stockage iCloud partagé local doit être réinitialisé. Fermez puis relancez Voucher Wallet, puis demandez à votre ami de renvoyer l'invitation.
+
+            Vérifiez aussi que vous utilisez tous les deux la même version de l'app, par exemple toutes les deux via TestFlight/App Store ou toutes les deux via Xcode.
+            """
+            return
+        }
+
+        lastErrorMessage = "Impossible d'accepter le partage : \(error.localizedDescription)"
+    }
+
+    private func isSharedDatabaseZoneInitializationError(_ error: Error) -> Bool {
+        let message = String(describing: error).lowercased()
+        return message.contains("only shared zones can be accessed in the shared db") ||
+            message.contains("mirroring delegate never successfully initialized")
     }
 
     func acceptShareURLIfPossible(_ url: URL) -> Bool {

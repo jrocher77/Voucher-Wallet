@@ -51,47 +51,14 @@ extension VoucherSharingManager {
         "locallyDeletedSharedExpenseIDs"
     }
 
-    func rememberLocallyDeletedSharedExpense(_ expense: Expense) {
-        guard expense.sharingPeriodID != nil || expense.authorRecordName != nil || expense.authorDisplayName != nil else {
-            return
-        }
-
-        let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
-        var ids = Set(defaults.stringArray(forKey: locallyDeletedSharedExpenseDefaultsKey) ?? [])
-        if ids.insert(expense.id.uuidString).inserted {
-            defaults.set(Array(ids), forKey: locallyDeletedSharedExpenseDefaultsKey)
-        }
-    }
-
     @discardableResult
     func purgeLocallyDeletedSharedExpenses(for vouchers: [Voucher]) -> Bool {
         let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
-        let deletedIDs = Set((defaults.stringArray(forKey: locallyDeletedSharedExpenseDefaultsKey) ?? []).compactMap(UUID.init(uuidString:)))
-        guard !deletedIDs.isEmpty else { return false }
-
-        let context = persistence.container.viewContext
-        var didChange = false
-        for voucher in vouchers where voucher.managedObjectContext != nil && !voucher.isDeleted {
-            for expense in voucher.activeExpensesList where deletedIDs.contains(expense.id) {
-                context.delete(expense)
-                didChange = true
-            }
-        }
-
-        guard didChange else { return false }
-        do {
-            try context.save()
-            context.processPendingChanges()
-            for voucher in vouchers {
-                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
-                NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-            }
-            WidgetReloader.reloadAllWidgets()
-            return true
-        } catch {
-            debugLog("[Partage][Miroir] Purge locale des dépenses supprimées impossible: \(error.localizedDescription)")
+        guard defaults.stringArray(forKey: locallyDeletedSharedExpenseDefaultsKey)?.isEmpty == false else {
             return false
         }
+        defaults.removeObject(forKey: locallyDeletedSharedExpenseDefaultsKey)
+        return false
     }
 
     func mirrorSharedExpense(_ expense: Expense, for voucher: Voucher, isDeleted: Bool = false) {
@@ -102,12 +69,6 @@ extension VoucherSharingManager {
         Task { @MainActor [weak self] in
             await self?.saveSharedExpenseMirror(payload, voucherObjectID: voucherObjectID)
         }
-    }
-
-    func mirrorSharedExpenseBeforeDeleting(_ expense: Expense, for voucher: Voucher) async {
-        guard voucher.isInActiveShare else { return }
-        let payload = sharedExpenseMirrorPayload(for: expense, voucher: voucher, isDeleted: true)
-        await saveSharedExpenseMirror(payload, voucherObjectID: voucher.objectID)
     }
 
     private func sharedExpenseMirrorPayload(
@@ -279,16 +240,11 @@ extension VoucherSharingManager {
         let context = persistence.container.viewContext
         let existing = voucher.activeExpensesList.first { $0.id == expenseID }
 
-        if isDeleted {
-            guard let existing else { return false }
-            context.delete(existing)
-            return true
-        }
-
-        guard let amount = doubleValue(record[SharedExpenseMirrorRecord.amount]),
+        guard let recordAmount = doubleValue(record[SharedExpenseMirrorRecord.amount]),
               let date = record[SharedExpenseMirrorRecord.date] as? Date else {
             return false
         }
+        let amount = isDeleted ? 0 : recordAmount
 
         let expense = existing ?? Expense(context: context, id: expenseID, amount: amount, date: date)
         if existing == nil {

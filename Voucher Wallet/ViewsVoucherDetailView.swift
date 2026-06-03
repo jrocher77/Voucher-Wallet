@@ -546,8 +546,6 @@ struct VoucherDetailView: View {
                             canModify: canModify(expense)
                         ) {
                             expenseToPresent = .edit(expense)
-                        } onDelete: {
-                            deleteExpense(with: expense.objectID)
                         }
                     }
                     .padding(.horizontal)
@@ -652,36 +650,6 @@ struct VoucherDetailView: View {
             expense.authorRecordName == sharingManager.authorIdentifier
     }
 
-    private func deleteExpense(with objectID: NSManagedObjectID) {
-        let shouldReloadFavoriteWidget = voucher.isFavorite
-        guard let expense = try? modelContext.existingObject(with: objectID) as? Expense else {
-            modelContext.refresh(voucher, mergeChanges: true)
-            expenseRevision += 1
-            return
-        }
-        Task { @MainActor in
-            sharingManager.rememberLocallyDeletedSharedExpense(expense)
-            if voucher.isInActiveShare {
-                await sharingManager.mirrorSharedExpenseBeforeDeleting(expense, for: voucher)
-            }
-            modelContext.delete(expense)
-
-            do {
-                try modelContext.save()
-                modelContext.refresh(voucher, mergeChanges: true)
-                expenseRevision += 1
-                voucherRevision += 1
-                NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
-                if shouldReloadFavoriteWidget {
-                    WidgetReloader.reloadFavoriteVouchersWidget()
-                }
-            } catch {
-                debugLog("❌ Erreur lors de la suppression de la dépense: \(error)")
-            }
-        }
-    }
-    
     private func toggleFavorite() {
         let manager: FavoritesManager
         if let existingManager = favoritesManager {
@@ -809,9 +777,6 @@ struct ExpenseRow: View {
     let amount: Double
     let canModify: Bool
     let onEdit: () -> Void
-    let onDelete: () -> Void
-    
-    @State private var showingDeleteAlert = false
     
     var body: some View {
         HStack {
@@ -846,31 +811,17 @@ struct ExpenseRow: View {
                 .foregroundColor(.red)
             
             if canModify {
-                Menu {
-                    Button(action: onEdit) {
-                        Label("Modifier", systemImage: "pencil")
-                    }
-
-                    Button(role: .destructive, action: { showingDeleteAlert = true }) {
-                        Label("Supprimer", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                Button(action: onEdit) {
+                    Image(systemName: "pencil.circle")
                         .foregroundColor(.blue)
+                        .font(.title3)
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding()
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .alert("Supprimer cette dépense ?", isPresented: $showingDeleteAlert) {
-            Button("Annuler", role: .cancel) { }
-            Button("Supprimer", role: .destructive) {
-                onDelete()
-            }
-        } message: {
-            Text("Cette action est irréversible.")
-        }
     }
 }
 

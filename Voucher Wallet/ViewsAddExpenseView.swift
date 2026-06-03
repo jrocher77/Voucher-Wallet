@@ -126,21 +126,7 @@ struct AddExpenseView: View {
                 } header: {
                     Text("Dépense")
                 } footer: {
-                    Text("Le montant est déduit immédiatement du solde du bon.")
-                }
-                
-                if isEditing {
-                    Section {
-                        Button(role: .destructive) {
-                            deleteExpense()
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Label("Supprimer cette dépense", systemImage: "trash")
-                                Spacer()
-                            }
-                        }
-                    }
+                    Text(isEditing ? "Le montant est déduit immédiatement du solde du bon. Saisissez 0 € pour neutraliser une dépense entrée par erreur." : "Le montant est déduit immédiatement du solde du bon.")
                 }
             }
             .navigationTitle(isEditing ? "Modifier la dépense" : "Nouvelle dépense")
@@ -207,9 +193,10 @@ struct AddExpenseView: View {
     }
     
     private var isFormValid: Bool {
-        guard let expenseAmount = parsedAmount, expenseAmount > 0 else {
+        guard let expenseAmount = parsedAmount else {
             return false
         }
+        guard isEditing ? expenseAmount >= 0 : expenseAmount > 0 else { return false }
         
         return expenseAmount.currencyCents <= adjustedBalance.currencyCents
     }
@@ -223,6 +210,11 @@ struct AddExpenseView: View {
         }
         guard let expenseAmount = parsedAmount else {
             errorMessage = "Montant invalide"
+            showingError = true
+            return
+        }
+        guard isEditing ? expenseAmount >= 0 : expenseAmount > 0 else {
+            errorMessage = isEditing ? "Le montant doit être positif ou égal à 0" : "Le montant doit être supérieur à 0"
             showingError = true
             return
         }
@@ -288,30 +280,6 @@ struct AddExpenseView: View {
             errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"
             showingError = true
             debugLog("❌ Erreur de sauvegarde: \(error)")
-        }
-    }
-    
-    private func deleteExpense() {
-        guard let expense = existingExpense else { return }
-        Task { @MainActor in
-            sharingManager.rememberLocallyDeletedSharedExpense(expense)
-            if voucher.isInActiveShare {
-                await sharingManager.mirrorSharedExpenseBeforeDeleting(expense, for: voucher)
-            }
-            modelContext.delete(expense)
-
-            do {
-                try modelContext.save()
-                modelContext.refresh(voucher, mergeChanges: true)
-                NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
-                onExpenseSaved?()
-                reloadFavoriteWidgetIfNeeded()
-                dismiss()
-            } catch {
-                errorMessage = "Erreur lors de la suppression : \(error.localizedDescription)"
-                showingError = true
-            }
         }
     }
     

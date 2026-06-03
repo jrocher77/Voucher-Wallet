@@ -51,6 +51,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 - **Statistiques d'apprentissage** : Consultez les données apprises
 - **Réinitialisation** : Effacez les préférences apprises
 - **Démonstration** : Relancez l'écran de présentation au prochain lancement
+- **Identité de partage** : Modifiez ou réinitialisez le nom affiché avec vos dépenses sur les bons partagés
 - **Synchronisation** : Mise à jour automatique entre l'app et les Réglages
 - **À propos** : Version et informations de l'app
 
@@ -63,7 +64,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 - **Dépenses attribuées** : Les dépenses créées pendant un partage affichent leur auteur et leur heure de saisie
 - **Favoris personnels** : Un bon reçu peut être favori et apparaître dans le widget, sans synchroniser ce choix avec le propriétaire
 - **Récupération après changement d'iPhone** : Les données Core Data sont restaurées via iCloud quand l'application est installée sur un nouvel appareil
-- **Migration 1.1.1 vers 2.0** : Reprise locale du store SwiftData historique avec réparation des champs manquants, conservation des favoris personnels, consolidation des doublons par identifiant et numéro de bon, puis inhibition et purge des anciens bons déjà migrés lorsqu'ils ont disparu de Core Data
+- **Migration 1.1.1 vers 2.0** : Reprise locale du store SwiftData historique avec réparation des champs manquants, conservation des favoris personnels, consolidation des doublons par identifiant et numéro de bon, puis inhibition et purge des anciens bons déjà migrés lorsqu'ils ont disparu de Core Data, sans bloquer leur réimport volontaire
 - **Widget compatible** : La cible widget utilise le même conteneur CloudKit et le même App Group que l'application principale
 
 ---

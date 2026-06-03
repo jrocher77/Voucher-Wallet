@@ -138,6 +138,20 @@ final class SharedModelContainer {
         }
     }
 
+    static func forgetDeletedLegacyVoucherForUserImport(_ voucher: Voucher) {
+        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+
+        var deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
+        deletedIDs.remove(voucher.id.uuidString)
+        defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
+
+        if let key = deletedLegacyVoucherKey(for: voucher.voucherNumber) {
+            var deletedKeys = Set(defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? [])
+            deletedKeys.remove(key)
+            defaults.set(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
+        }
+    }
+
     static func isDeletedLegacyVoucher(_ voucher: Voucher) -> Bool {
         let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
         let deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])

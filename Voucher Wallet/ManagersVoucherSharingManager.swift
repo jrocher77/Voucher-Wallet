@@ -42,8 +42,8 @@ final class VoucherSharingManager {
     private var isRemovingReceivedShare = false
     private var receivedShareRemovalQueue: [ReceivedShareRemoval] = []
 
-    private let identityDefaultsKey = "sharedExpenseDisplayName"
-    private let authorIdentifierKey = "sharedExpenseAuthorIdentifier"
+    nonisolated static let identityDefaultsKey = "sharedExpenseDisplayName"
+    nonisolated static let authorIdentifierKey = "sharedExpenseAuthorIdentifier"
     private let sharingDiagnosticKey = "lastCloudSharingDiagnostic"
     private let sharingOperationActiveKey = "cloudSharingOperationActive"
     private let shareMetadataRetryDelays: [TimeInterval] = [0.0, 1.0, 3.0, 6.0, 12.0]
@@ -81,25 +81,25 @@ final class VoucherSharingManager {
     }
 
     var storedDisplayName: String {
-        NSUbiquitousKeyValueStore.default.string(forKey: identityDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: identityDefaultsKey)
+        NSUbiquitousKeyValueStore.default.string(forKey: Self.identityDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: Self.identityDefaultsKey)
             ?? ""
     }
 
     var authorIdentifier: String {
-        if let existing = NSUbiquitousKeyValueStore.default.string(forKey: authorIdentifierKey) {
+        if let existing = NSUbiquitousKeyValueStore.default.string(forKey: Self.authorIdentifierKey) {
             return existing
         }
         let identifier = UUID().uuidString
-        NSUbiquitousKeyValueStore.default.set(identifier, forKey: authorIdentifierKey)
+        NSUbiquitousKeyValueStore.default.set(identifier, forKey: Self.authorIdentifierKey)
         NSUbiquitousKeyValueStore.default.synchronize()
         return identifier
     }
 
     func saveDisplayName(_ value: String) {
         let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        UserDefaults.standard.set(name, forKey: identityDefaultsKey)
-        NSUbiquitousKeyValueStore.default.set(name, forKey: identityDefaultsKey)
+        UserDefaults.standard.set(name, forKey: Self.identityDefaultsKey)
+        NSUbiquitousKeyValueStore.default.set(name, forKey: Self.identityDefaultsKey)
         NSUbiquitousKeyValueStore.default.synchronize()
     }
 
@@ -109,8 +109,8 @@ final class VoucherSharingManager {
     }
 
     func beginSharingInitialization() {
-        sharingStatusMessage = "Initialisation du partage"
-        markSharingStep("initialisation du partage")
+        sharingStatusMessage = "Configuration du partage"
+        markSharingStep("configuration du partage")
     }
 
     func markSharingOperationEnded() {

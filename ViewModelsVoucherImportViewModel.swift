@@ -216,7 +216,7 @@ class VoucherImportViewModel {
                 codeImage = BarcodeGenerator.generateBarcode(from: detectedVoucher.voucherNumber)
             }
             
-            _ = Voucher(
+            let voucher = Voucher(
                 context: modelContext,
                 storeName: detectedVoucher.storeName ?? "Enseigne inconnue",
                 amount: detectedVoucher.amount,
@@ -230,6 +230,7 @@ class VoucherImportViewModel {
                 storeColor: colorHex,
                 textColor: textColorHex
             )
+            SharedModelContainer.forgetDeletedLegacyVoucherForUserImport(voucher)
             
             // Apprentissage automatique
             if let storeName = detectedVoucher.storeName {
@@ -283,7 +284,7 @@ class VoucherImportViewModel {
         let colorHex = cardColor.toHex()
         let textColorHex = textColor.toHex()
         
-        _ = Voucher(
+        let voucher = Voucher(
             context: modelContext,
             storeName: storeName,
             amount: amount,
@@ -297,6 +298,7 @@ class VoucherImportViewModel {
             storeColor: colorHex,
             textColor: textColorHex
         )
+        SharedModelContainer.forgetDeletedLegacyVoucherForUserImport(voucher)
         
         // Apprentissage
         let detectedName = analysisResult?.detectedStoreName

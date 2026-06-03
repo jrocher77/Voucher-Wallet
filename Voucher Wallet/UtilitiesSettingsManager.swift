@@ -23,6 +23,7 @@ class SettingsManager: ObservableObject {
     private let resetRequestedKey = "reset_learning_requested"
     private let hasSeenOnboardingKey = "has_seen_onboarding"
     private let showOnboardingNextLaunchKey = "show_onboarding_next_launch"
+    private let resetSharedExpenseIdentityKey = "reset_shared_expense_identity"
     
     @Published var shouldShowResetConfirmation = false
     
@@ -64,6 +65,8 @@ class SettingsManager: ObservableObject {
             resetRequestedKey: false,
             hasSeenOnboardingKey: false,
             showOnboardingNextLaunchKey: false,
+            VoucherSharingManager.identityDefaultsKey: "",
+            resetSharedExpenseIdentityKey: false,
             "version_preference": appVersion
         ]
         
@@ -165,6 +168,40 @@ class SettingsManager: ObservableObject {
         UserDefaults.standard.set(false, forKey: resetRequestedKey)
     }
 
+    // MARK: - Identité de partage
+
+    /// Synchronise le nom d'affichage modifiable depuis les Réglages iOS.
+    func synchronizeSharedExpenseIdentitySettings() {
+        if UserDefaults.standard.bool(forKey: resetSharedExpenseIdentityKey) {
+            resetSharedExpenseIdentity()
+            return
+        }
+
+        let localName = UserDefaults.standard
+            .string(forKey: VoucherSharingManager.identityDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let cloudName = NSUbiquitousKeyValueStore.default
+            .string(forKey: VoucherSharingManager.identityDefaultsKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if !localName.isEmpty {
+            UserDefaults.standard.set(localName, forKey: VoucherSharingManager.identityDefaultsKey)
+            NSUbiquitousKeyValueStore.default.set(localName, forKey: VoucherSharingManager.identityDefaultsKey)
+            NSUbiquitousKeyValueStore.default.synchronize()
+        } else if !cloudName.isEmpty {
+            UserDefaults.standard.set(cloudName, forKey: VoucherSharingManager.identityDefaultsKey)
+        }
+    }
+
+    private func resetSharedExpenseIdentity() {
+        UserDefaults.standard.removeObject(forKey: VoucherSharingManager.identityDefaultsKey)
+        UserDefaults.standard.set(false, forKey: resetSharedExpenseIdentityKey)
+        NSUbiquitousKeyValueStore.default.removeObject(forKey: VoucherSharingManager.identityDefaultsKey)
+        NSUbiquitousKeyValueStore.default.removeObject(forKey: VoucherSharingManager.authorIdentifierKey)
+        NSUbiquitousKeyValueStore.default.synchronize()
+        debugLog("✅ Nom d'affichage des dépenses partagées réinitialisé")
+    }
+
     // MARK: - Onboarding
 
     /// Indique si l'écran de démonstration doit être affiché.
@@ -188,6 +225,7 @@ extension SettingsManager {
     /// Met à jour les statistiques et affiche une alerte de réinitialisation si nécessaire
     /// À appeler dans `onAppear` ou `scenePhase`
     func refreshOnAppActivation() {
+        synchronizeSharedExpenseIdentitySettings()
         updateSettingsStatistics()
     }
 }

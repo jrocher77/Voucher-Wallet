@@ -352,6 +352,7 @@ struct EditVoucherView: View {
         voucher.pinCode = pinCode.isEmpty ? nil : pinCode
         voucher.codeType = codeType
         voucher.expirationDate = hasExpirationDate ? expirationDate : nil
+        SharedModelContainer.forgetDeletedLegacyVoucherForUserImport(voucher)
         
         // Mettre à jour les couleurs
         let newColorHex = selectedColor.toHex()

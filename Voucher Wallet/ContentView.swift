@@ -89,9 +89,12 @@ struct ContentView: View {
         var seenObjectIDs = Set<NSManagedObjectID>()
         let uniqueObjects = (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
             guard voucher.managedObjectContext != nil, !voucher.isDeleted else { return false }
+            guard !SharedModelContainer.isDeletedLegacyVoucher(voucher) else { return false }
             return seenObjectIDs.insert(voucher.objectID).inserted
         }.filter { voucher in
-            voucher.managedObjectContext != nil && !voucher.isDeleted
+            voucher.managedObjectContext != nil &&
+                !voucher.isDeleted &&
+                !SharedModelContainer.isDeletedLegacyVoucher(voucher)
         }
         return uniqueObjects.reduce(into: [UUID: Voucher]()) { result, voucher in
             guard let existing = result[voucher.id] else {
@@ -455,6 +458,7 @@ struct ContentView: View {
     }
 
     private func refreshVisibleVouchers(reason: String = "wallet-refresh-event") {
+        let purgedDeletedLegacyVouchers = SharedModelContainer.purgeDeletedLegacyVouchers(in: modelContext)
         let visibleVouchers = vouchers
         modelContext.processPendingChanges()
         for voucher in visibleVouchers where voucher.managedObjectContext != nil && !voucher.isDeleted {
@@ -465,7 +469,7 @@ struct ContentView: View {
         sharingManager.reconcileSharingStates()
         reloadReceivedSharedVouchers(reason: reason)
         favoriteRevision += 1
-        if purgedDeletedExpenses {
+        if purgedDeletedLegacyVouchers || purgedDeletedExpenses {
             WidgetReloader.reloadAllWidgets()
         }
     }
@@ -513,7 +517,9 @@ struct ContentView: View {
 
         do {
             receivedSharedVouchers = try modelContext.fetch(request).filter { voucher in
-                voucher.managedObjectContext != nil && !voucher.isDeleted
+                voucher.managedObjectContext != nil &&
+                    !voucher.isDeleted &&
+                    !SharedModelContainer.isDeletedLegacyVoucher(voucher)
             }
             receivedShareRevision += 1
             debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")

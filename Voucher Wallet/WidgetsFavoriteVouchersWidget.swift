@@ -165,9 +165,13 @@ struct FavoriteVouchersProvider: TimelineProvider {
             // Le widget lit le store partagé localement. L'app principale se charge de la synchronisation iCloud.
             let container = try SharedModelContainer.create(enablesCloudSync: false)
             let context = container.viewContext
+            SharedModelContainer.purgeDeletedLegacyVouchers(in: context)
             let fetchedVouchers = try context.fetch(Voucher.fetchRequest())
             let favoriteVouchers = fetchedVouchers.filter { voucher in
-                voucher.managedObjectContext != nil && !voucher.isDeleted && voucher.isFavorite
+                voucher.managedObjectContext != nil &&
+                    !voucher.isDeleted &&
+                    !SharedModelContainer.isDeletedLegacyVoucher(voucher) &&
+                    voucher.isFavorite
             }
             let uniqueVouchers = favoriteVouchers.reduce(into: [UUID: Voucher]()) { result, voucher in
                 guard let existing = result[voucher.id] else {

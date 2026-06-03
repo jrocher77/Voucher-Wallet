@@ -138,6 +138,41 @@ final class SharedModelContainer {
         }
     }
 
+    static func isDeletedLegacyVoucher(_ voucher: Voucher) -> Bool {
+        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+        let deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
+        let deletedKeys = Set(defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? [])
+
+        return deletedIDs.contains(voucher.id.uuidString) ||
+            deletedLegacyVoucherKey(for: voucher.voucherNumber).map(deletedKeys.contains) == true
+    }
+
+    @discardableResult
+    static func purgeDeletedLegacyVouchers(in context: NSManagedObjectContext) -> Bool {
+        do {
+            let vouchers = try context.fetch(Voucher.fetchRequest())
+            let deletedVouchers = vouchers.filter { voucher in
+                voucher.managedObjectContext != nil &&
+                    !voucher.isDeleted &&
+                    isDeletedLegacyVoucher(voucher)
+            }
+            guard !deletedVouchers.isEmpty else { return false }
+
+            for voucher in deletedVouchers {
+                voucher.deletePersonalPreference(in: context)
+                context.delete(voucher)
+            }
+
+            if context.hasChanges {
+                try context.save()
+            }
+            return true
+        } catch {
+            debugLog("⚠️ Purge des anciens bons supprimés impossible : \(error.localizedDescription)")
+            return false
+        }
+    }
+
     private static func deletedLegacyVoucherKey(for voucherNumber: String) -> String? {
         let normalized = voucherNumber
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -427,17 +462,22 @@ final class SharedModelContainer {
         let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
         let previousMigrationVersion = defaults.integer(forKey: migrationVersionKey)
         guard previousMigrationVersion < migrationVersion else { return }
+        let alreadyRanLegacyMigration = previousMigrationVersion > 0
 
         guard let privateStore,
               let root = privateStore.url?.deletingLastPathComponent() else { return }
 
         let context = container.viewContext
         let snapshots: [LegacyVoucherSnapshot]
-        do {
-            snapshots = try readLegacySwiftDataSnapshots(near: root)
-        } catch {
+        if alreadyRanLegacyMigration {
             snapshots = []
-            debugLog("⚠️ Lecture du store SwiftData historique impossible, réparation Core Data seule : \(error.localizedDescription)")
+        } else {
+            do {
+                snapshots = try readLegacySwiftDataSnapshots(near: root)
+            } catch {
+                snapshots = []
+                debugLog("⚠️ Lecture du store SwiftData historique impossible, réparation Core Data seule : \(error.localizedDescription)")
+            }
         }
 
         do {
@@ -446,7 +486,6 @@ final class SharedModelContainer {
                 let deletedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? [])
                 var migratedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherIDsKey) ?? [])
                 var migratedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherKeysKey) ?? [])
-                let alreadyRanLegacyMigration = previousMigrationVersion > 0
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
                     existingVouchers.map { ($0.id, $0) },
@@ -461,6 +500,18 @@ final class SharedModelContainer {
                         Self.preferredMigrationVoucher(existing, candidate)
                     }
                 )
+                for existingVoucher in existingVouchers where Self.isDeletedLegacyVoucher(
+                    existingVoucher,
+                    deletedIDs: deletedLegacyVoucherIDs,
+                    deletedKeys: deletedLegacyVoucherKeys
+                ) {
+                    existingVoucher.deletePersonalPreference(in: context)
+                    context.delete(existingVoucher)
+                    vouchersByID.removeValue(forKey: existingVoucher.id)
+                    if let key = Self.legacyVoucherKey(for: existingVoucher) {
+                        vouchersByLegacyKey.removeValue(forKey: key)
+                    }
+                }
                 if alreadyRanLegacyMigration {
                     for snapshot in snapshots {
                         migratedLegacyVoucherIDs.insert(snapshot.id.uuidString)
@@ -653,6 +704,15 @@ final class SharedModelContainer {
     ) -> Bool {
         deletedIDs.contains(snapshot.id.uuidString) ||
             legacyVoucherKey(for: snapshot).map(deletedKeys.contains) == true
+    }
+
+    private static func isDeletedLegacyVoucher(
+        _ voucher: Voucher,
+        deletedIDs: Set<String>,
+        deletedKeys: Set<String>
+    ) -> Bool {
+        deletedIDs.contains(voucher.id.uuidString) ||
+            legacyVoucherKey(for: voucher).map(deletedKeys.contains) == true
     }
 
     private static func isAlreadyMigratedLegacyVoucher(

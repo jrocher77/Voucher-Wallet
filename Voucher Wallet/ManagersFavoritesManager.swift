@@ -46,7 +46,12 @@ final class FavoritesManager {
     func getFavoriteVouchers() -> [Voucher] {
         do {
             let request = Voucher.fetchRequest()
-            let vouchers = try modelContext.fetch(request).filter(\.isFavorite)
+            let vouchers = try modelContext.fetch(request).filter { voucher in
+                voucher.managedObjectContext != nil &&
+                    !voucher.isDeleted &&
+                    !SharedModelContainer.isDeletedLegacyVoucher(voucher) &&
+                    voucher.isFavorite
+            }
             let uniqueVouchers = vouchers.reduce(into: [UUID: Voucher]()) { result, voucher in
                 guard let existing = result[voucher.id] else {
                     result[voucher.id] = voucher

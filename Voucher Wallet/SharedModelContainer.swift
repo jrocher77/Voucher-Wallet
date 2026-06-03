@@ -396,7 +396,7 @@ final class SharedModelContainer {
     /// Le fichier source est conserve afin de ne jamais detruire une sauvegarde existante.
     private func importLegacySwiftDataStoreIfNeeded() {
         let migrationVersionKey = "legacySwiftDataMigrationVersion"
-        let migrationVersion = 2
+        let migrationVersion = 3
         let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
         guard defaults.integer(forKey: migrationVersionKey) < migrationVersion else { return }
 
@@ -414,17 +414,25 @@ final class SharedModelContainer {
                     existingVouchers.map { ($0.id, $0) },
                     uniquingKeysWith: { existing, _ in existing }
                 )
+                var vouchersByLegacyKey = Dictionary(
+                    existingVouchers.compactMap { voucher -> (String, Voucher)? in
+                        guard let key = Self.legacyVoucherKey(for: voucher) else { return nil }
+                        return (key, voucher)
+                    },
+                    uniquingKeysWith: { existing, candidate in
+                        Self.preferredMigrationVoucher(existing, candidate)
+                    }
+                )
                 let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).map(\.id))
                 var importedExpenseIDs = expenseIDs
 
                 for snapshot in snapshots {
-                    let codeType = CodeType(rawValue: snapshot.codeType) ?? .barcode
+                    let codeType = Self.normalizedLegacyCodeType(snapshot.codeType)
                     let voucher: Voucher
-                    if let existingVoucher = vouchersByID[snapshot.id] {
+                    if let existingVoucher = vouchersByID[snapshot.id]
+                        ?? Self.legacyVoucherKey(for: snapshot).flatMap({ vouchersByLegacyKey[$0] }) {
                         voucher = existingVoucher
-                        // Les anciens champs personnels/type de code ne sont pas repris par CloudKit.
-                        voucher.codeType = codeType
-                        voucher.codeImageData = snapshot.codeImageData
+                        Self.update(voucher, from: snapshot, codeType: codeType)
                     } else {
                         voucher = Voucher(
                             context: context,
@@ -443,11 +451,17 @@ final class SharedModelContainer {
                             textColor: snapshot.textColor
                         )
                         vouchersByID[snapshot.id] = voucher
+                        if let key = Self.legacyVoucherKey(for: snapshot) {
+                            vouchersByLegacyKey[key] = voucher
+                        }
                     }
 
-                    // Favoris et ordre sont personnels et doivent provenir du store local historique.
-                    voucher.isFavorite = snapshot.isFavorite
-                    voucher.sortOrder = snapshot.sortOrder
+                    // Favoris et ordre sont personnels : on restaure ceux de la 1.1.1 sans effacer
+                    // un choix déjà refait dans la 2.0.
+                    if snapshot.isFavorite {
+                        voucher.isFavorite = true
+                        voucher.sortOrder = snapshot.sortOrder
+                    }
 
                     for sourceExpense in snapshot.expenses {
                         guard !importedExpenseIDs.contains(sourceExpense.id) else { continue }
@@ -463,9 +477,12 @@ final class SharedModelContainer {
                         importedExpenseIDs.insert(sourceExpense.id)
                     }
                 }
+                Self.consolidateDuplicateLocalVouchers(in: context)
+                Self.consolidatePersonalPreferences(in: context)
                 try context.save()
             }
             defaults.set(migrationVersion, forKey: migrationVersionKey)
+            WidgetReloader.reloadFavoriteVouchersWidget()
             debugLog("✅ Migration locale : \(snapshots.count) bon(s) repris ou repares depuis SwiftData")
         } catch {
             debugLog("⚠️ Import du store SwiftData existant impossible : \(error.localizedDescription)")
@@ -494,6 +511,192 @@ final class SharedModelContainer {
             throw lastError
         }
         return []
+    }
+
+    private static func normalizedLegacyCodeType(_ rawValue: String) -> CodeType {
+        let normalized = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+
+        if normalized.contains("qr") {
+            return .qrCode
+        }
+        return .barcode
+    }
+
+    private static func update(
+        _ voucher: Voucher,
+        from snapshot: LegacyVoucherSnapshot,
+        codeType: CodeType
+    ) {
+        if voucher.storeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            voucher.storeName = snapshot.storeName
+        }
+        if voucher.amount == nil {
+            voucher.amount = snapshot.amount
+        }
+        if voucher.voucherNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            voucher.voucherNumber = snapshot.voucherNumber
+        }
+        if voucher.pinCode == nil {
+            voucher.pinCode = snapshot.pinCode
+        }
+        if voucher.codeType == .barcode && codeType == .qrCode {
+            voucher.codeType = .qrCode
+            voucher.codeImageData = snapshot.codeImageData
+        } else if voucher.codeImageData == nil {
+            voucher.codeImageData = snapshot.codeImageData
+        }
+        if voucher.expirationDate == nil {
+            voucher.expirationDate = snapshot.expirationDate
+        }
+        if voucher.pdfData == nil {
+            voucher.pdfData = snapshot.pdfData
+        }
+        if voucher.storeColor == "#007AFF" {
+            voucher.storeColor = snapshot.storeColor
+        }
+        if voucher.textColor == "#FFFFFF" {
+            voucher.textColor = snapshot.textColor
+        }
+    }
+
+    private static func legacyVoucherKey(for snapshot: LegacyVoucherSnapshot) -> String? {
+        legacyVoucherKey(voucherNumber: snapshot.voucherNumber)
+    }
+
+    private static func legacyVoucherKey(for voucher: Voucher) -> String? {
+        legacyVoucherKey(voucherNumber: voucher.voucherNumber)
+    }
+
+    private static func legacyVoucherKey(voucherNumber: String) -> String? {
+        let normalized = voucherNumber
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .uppercased()
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func preferredMigrationVoucher(_ lhs: Voucher, _ rhs: Voucher) -> Voucher {
+        let lhsScore = migrationCompletenessScore(lhs)
+        let rhsScore = migrationCompletenessScore(rhs)
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore ? lhs : rhs
+        }
+        return lhs.dateAdded <= rhs.dateAdded ? lhs : rhs
+    }
+
+    private static func migrationCompletenessScore(_ voucher: Voucher) -> Int {
+        var score = 0
+        if voucher.isFavorite { score += 16 }
+        if voucher.amount != nil { score += 8 }
+        if voucher.codeType == .qrCode { score += 4 }
+        if voucher.codeImageData != nil { score += 2 }
+        if voucher.pdfData != nil { score += 1 }
+        return score
+    }
+
+    private static func consolidateDuplicateLocalVouchers(in context: NSManagedObjectContext) {
+        do {
+            let vouchers = try context.fetch(Voucher.fetchRequest()).filter { voucher in
+                voucher.managedObjectContext != nil
+                    && !voucher.isDeleted
+                    && !voucher.isReceivedShare
+            }
+            let grouped = Dictionary(grouping: vouchers, by: { legacyVoucherKey(for: $0) })
+
+            for case let (key?, group) in grouped where !key.isEmpty && group.count > 1 {
+                let canonical = group.reduce(group[0]) { preferredMigrationVoucher($0, $1) }
+                let duplicates = group.filter { $0.objectID != canonical.objectID }
+
+                for duplicate in duplicates {
+                    merge(duplicateVoucher: duplicate, into: canonical)
+                    duplicate.deletePersonalPreference(in: context)
+                    context.delete(duplicate)
+                }
+            }
+        } catch {
+            debugLog("⚠️ Consolidation des doublons locaux impossible : \(error.localizedDescription)")
+        }
+    }
+
+    private static func merge(duplicateVoucher duplicate: Voucher, into canonical: Voucher) {
+        if canonical.storeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            canonical.storeName = duplicate.storeName
+        }
+        if canonical.amount == nil {
+            canonical.amount = duplicate.amount
+        }
+        if canonical.pinCode == nil {
+            canonical.pinCode = duplicate.pinCode
+        }
+        if canonical.codeType == .barcode && duplicate.codeType == .qrCode {
+            canonical.codeType = .qrCode
+            canonical.codeImageData = duplicate.codeImageData
+        } else if canonical.codeImageData == nil {
+            canonical.codeImageData = duplicate.codeImageData
+        }
+        if canonical.expirationDate == nil {
+            canonical.expirationDate = duplicate.expirationDate
+        }
+        if canonical.pdfData == nil {
+            canonical.pdfData = duplicate.pdfData
+        }
+        if canonical.storeColor == "#007AFF" {
+            canonical.storeColor = duplicate.storeColor
+        }
+        if canonical.textColor == "#FFFFFF" {
+            canonical.textColor = duplicate.textColor
+        }
+        if duplicate.isFavorite {
+            canonical.isFavorite = true
+            canonical.sortOrder = min(canonical.sortOrder, duplicate.sortOrder)
+        }
+
+        let existingExpenseIDs = Set(canonical.activeExpensesList.map(\.id))
+        for expense in duplicate.activeExpensesList where !existingExpenseIDs.contains(expense.id) {
+            expense.voucher = canonical
+        }
+    }
+
+    private static func consolidatePersonalPreferences(in context: NSManagedObjectContext) {
+        do {
+            let vouchers = try context.fetch(Voucher.fetchRequest())
+            let existingVoucherIDs = Set(vouchers.filter { $0.managedObjectContext != nil && !$0.isDeleted }.map(\.id))
+            let preferences = try context.fetch(PersonalVoucherPreference.fetchRequest())
+            let grouped = Dictionary(grouping: preferences, by: \.voucherID)
+
+            for (voucherID, items) in grouped {
+                guard existingVoucherIDs.contains(voucherID), items.count > 1 else {
+                    if !existingVoucherIDs.contains(voucherID) {
+                        items.forEach(context.delete)
+                    }
+                    continue
+                }
+
+                let keep = items.min {
+                    if $0.isFavorite != $1.isFavorite {
+                        return $0.isFavorite
+                    }
+                    return $0.sortOrder < $1.sortOrder
+                }
+
+                keep?.isFavorite = items.contains(where: \.isFavorite)
+                keep?.sortOrder = items.map(\.sortOrder).min() ?? 0
+
+                if let keep {
+                    for item in items where item.objectID != keep.objectID {
+                        context.delete(item)
+                    }
+                }
+            }
+        } catch {
+            debugLog("⚠️ Consolidation des préférences favorites impossible : \(error.localizedDescription)")
+        }
     }
 
     private static func legacySwiftDataStoreURLs(near root: URL) -> [URL] {

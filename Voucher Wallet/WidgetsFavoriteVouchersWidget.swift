@@ -165,15 +165,23 @@ struct FavoriteVouchersProvider: TimelineProvider {
             // Le widget lit le store partagé localement. L'app principale se charge de la synchronisation iCloud.
             let container = try SharedModelContainer.create(enablesCloudSync: false)
             let context = container.viewContext
-            let vouchers = try context.fetch(Voucher.fetchRequest())
-                .filter { voucher in
-                    voucher.managedObjectContext != nil && !voucher.isDeleted && voucher.isFavorite
+            let fetchedVouchers = try context.fetch(Voucher.fetchRequest())
+            let favoriteVouchers = fetchedVouchers.filter { voucher in
+                voucher.managedObjectContext != nil && !voucher.isDeleted && voucher.isFavorite
+            }
+            let uniqueVouchers = favoriteVouchers.reduce(into: [UUID: Voucher]()) { result, voucher in
+                guard let existing = result[voucher.id] else {
+                    result[voucher.id] = voucher
+                    return
                 }
-                .sorted {
-                    $0.sortOrder == $1.sortOrder
-                        ? $0.dateAdded > $1.dateAdded
-                        : $0.sortOrder < $1.sortOrder
+                result[voucher.id] = Self.preferredWidgetVoucher(existing, voucher)
+            }
+            let vouchers = Array(uniqueVouchers.values).sorted { first, second in
+                if first.sortOrder == second.sortOrder {
+                    return first.dateAdded > second.dateAdded
                 }
+                return first.sortOrder < second.sortOrder
+            }
             
             debugLog("🔍 Widget: Trouvé \(vouchers.count) cartes favorites")
             
@@ -200,6 +208,24 @@ struct FavoriteVouchersProvider: TimelineProvider {
             debugLog("❌ Erreur lors de la récupération des vouchers favoris: \(error)")
             return []
         }
+    }
+
+    private static func preferredWidgetVoucher(_ lhs: Voucher, _ rhs: Voucher) -> Voucher {
+        let lhsScore = widgetVoucherScore(lhs)
+        let rhsScore = widgetVoucherScore(rhs)
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore ? lhs : rhs
+        }
+        return lhs.dateAdded <= rhs.dateAdded ? lhs : rhs
+    }
+
+    private static func widgetVoucherScore(_ voucher: Voucher) -> Int {
+        var score = 0
+        if voucher.amount != nil { score += 8 }
+        if voucher.codeType == .qrCode { score += 4 }
+        if voucher.codeImageData != nil { score += 2 }
+        if voucher.pdfData != nil { score += 1 }
+        return score
     }
 }
 

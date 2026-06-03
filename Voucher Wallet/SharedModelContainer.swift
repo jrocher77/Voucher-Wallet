@@ -396,7 +396,7 @@ final class SharedModelContainer {
     /// Le fichier source est conserve afin de ne jamais detruire une sauvegarde existante.
     private func importLegacySwiftDataStoreIfNeeded() {
         let migrationVersionKey = "legacySwiftDataMigrationVersion"
-        let migrationVersion = 3
+        let migrationVersion = 4
         let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
         guard defaults.integer(forKey: migrationVersionKey) < migrationVersion else { return }
 
@@ -404,10 +404,15 @@ final class SharedModelContainer {
               let root = privateStore.url?.deletingLastPathComponent() else { return }
 
         let context = container.viewContext
+        let snapshots: [LegacyVoucherSnapshot]
         do {
-            let snapshots = try readLegacySwiftDataSnapshots(near: root)
-            guard !snapshots.isEmpty else { return }
+            snapshots = try readLegacySwiftDataSnapshots(near: root)
+        } catch {
+            snapshots = []
+            debugLog("⚠️ Lecture du store SwiftData historique impossible, réparation Core Data seule : \(error.localizedDescription)")
+        }
 
+        do {
             try context.performAndWait {
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
@@ -423,63 +428,67 @@ final class SharedModelContainer {
                         Self.preferredMigrationVoucher(existing, candidate)
                     }
                 )
-                let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).map(\.id))
-                var importedExpenseIDs = expenseIDs
+                if !snapshots.isEmpty {
+                    let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).map(\.id))
+                    var importedExpenseIDs = expenseIDs
 
-                for snapshot in snapshots {
-                    let codeType = Self.normalizedLegacyCodeType(snapshot.codeType)
-                    let voucher: Voucher
-                    if let existingVoucher = vouchersByID[snapshot.id]
-                        ?? Self.legacyVoucherKey(for: snapshot).flatMap({ vouchersByLegacyKey[$0] }) {
-                        voucher = existingVoucher
-                        Self.update(voucher, from: snapshot, codeType: codeType)
-                    } else {
-                        voucher = Voucher(
-                            context: context,
-                            id: snapshot.id,
-                            storeName: snapshot.storeName,
-                            amount: snapshot.amount,
-                            voucherNumber: snapshot.voucherNumber,
-                            pinCode: snapshot.pinCode,
-                            codeType: codeType,
-                            codeImageData: snapshot.codeImageData,
-                            expirationDate: snapshot.expirationDate,
-                            dateAdded: snapshot.dateAdded,
-                            sortOrder: snapshot.sortOrder,
-                            pdfData: snapshot.pdfData,
-                            storeColor: snapshot.storeColor,
-                            textColor: snapshot.textColor
-                        )
-                        vouchersByID[snapshot.id] = voucher
-                        if let key = Self.legacyVoucherKey(for: snapshot) {
-                            vouchersByLegacyKey[key] = voucher
+                    for snapshot in snapshots {
+                        let codeType = Self.normalizedLegacyCodeType(snapshot.codeType)
+                        let voucher: Voucher
+                        if let existingVoucher = vouchersByID[snapshot.id]
+                            ?? Self.legacyVoucherKey(for: snapshot).flatMap({ vouchersByLegacyKey[$0] }) {
+                            voucher = existingVoucher
+                            Self.update(voucher, from: snapshot, codeType: codeType)
+                        } else {
+                            voucher = Voucher(
+                                context: context,
+                                id: snapshot.id,
+                                storeName: snapshot.storeName,
+                                amount: snapshot.amount,
+                                voucherNumber: snapshot.voucherNumber,
+                                pinCode: snapshot.pinCode,
+                                codeType: codeType,
+                                codeImageData: snapshot.codeImageData,
+                                expirationDate: snapshot.expirationDate,
+                                dateAdded: snapshot.dateAdded,
+                                sortOrder: snapshot.sortOrder,
+                                pdfData: snapshot.pdfData,
+                                storeColor: snapshot.storeColor,
+                                textColor: snapshot.textColor
+                            )
+                            vouchersByID[snapshot.id] = voucher
+                            if let key = Self.legacyVoucherKey(for: snapshot) {
+                                vouchersByLegacyKey[key] = voucher
+                            }
                         }
-                    }
 
-                    // Favoris et ordre sont personnels : on restaure ceux de la 1.1.1 sans effacer
-                    // un choix déjà refait dans la 2.0.
-                    if snapshot.isFavorite {
-                        voucher.isFavorite = true
-                        voucher.sortOrder = snapshot.sortOrder
-                    }
+                        // Favoris et ordre sont personnels : on restaure ceux de la 1.1.1 sans effacer
+                        // un choix déjà refait dans la 2.0.
+                        if snapshot.isFavorite {
+                            voucher.isFavorite = true
+                            voucher.sortOrder = snapshot.sortOrder
+                        }
 
-                    for sourceExpense in snapshot.expenses {
-                        guard !importedExpenseIDs.contains(sourceExpense.id) else { continue }
-                        let expense = Expense(
-                            context: context,
-                            id: sourceExpense.id,
-                            amount: sourceExpense.amount,
-                            date: sourceExpense.date,
-                            note: sourceExpense.note
-                        )
-                        SharedModelContainer.assign(expense, toStoreOf: voucher)
-                        expense.voucher = voucher
-                        importedExpenseIDs.insert(sourceExpense.id)
+                        for sourceExpense in snapshot.expenses {
+                            guard !importedExpenseIDs.contains(sourceExpense.id) else { continue }
+                            let expense = Expense(
+                                context: context,
+                                id: sourceExpense.id,
+                                amount: sourceExpense.amount,
+                                date: sourceExpense.date,
+                                note: sourceExpense.note
+                            )
+                            SharedModelContainer.assign(expense, toStoreOf: voucher)
+                            expense.voucher = voucher
+                            importedExpenseIDs.insert(sourceExpense.id)
+                        }
                     }
                 }
                 Self.consolidateDuplicateLocalVouchers(in: context)
                 Self.consolidatePersonalPreferences(in: context)
-                try context.save()
+                if context.hasChanges {
+                    try context.save()
+                }
             }
             defaults.set(migrationVersion, forKey: migrationVersionKey)
             WidgetReloader.reloadFavoriteVouchersWidget()
@@ -607,7 +616,19 @@ final class SharedModelContainer {
                     && !voucher.isDeleted
                     && !voucher.isReceivedShare
             }
-            let grouped = Dictionary(grouping: vouchers, by: { legacyVoucherKey(for: $0) })
+            let idGroups = Dictionary(grouping: vouchers, by: \.id)
+            for (_, group) in idGroups where group.count > 1 {
+                let canonical = group.reduce(group[0]) { preferredMigrationVoucher($0, $1) }
+                let duplicates = group.filter { $0.objectID != canonical.objectID }
+
+                for duplicate in duplicates {
+                    merge(duplicateVoucher: duplicate, into: canonical)
+                    context.delete(duplicate)
+                }
+            }
+
+            let remainingVouchers = vouchers.filter { !$0.isDeleted }
+            let grouped = Dictionary(grouping: remainingVouchers, by: { legacyVoucherKey(for: $0) })
 
             for case let (key?, group) in grouped where !key.isEmpty && group.count > 1 {
                 let canonical = group.reduce(group[0]) { preferredMigrationVoucher($0, $1) }
@@ -615,12 +636,27 @@ final class SharedModelContainer {
 
                 for duplicate in duplicates {
                     merge(duplicateVoucher: duplicate, into: canonical)
-                    duplicate.deletePersonalPreference(in: context)
+                    if duplicate.id != canonical.id {
+                        deletePersonalPreferences(for: duplicate.id, in: context)
+                    }
                     context.delete(duplicate)
                 }
             }
         } catch {
             debugLog("⚠️ Consolidation des doublons locaux impossible : \(error.localizedDescription)")
+        }
+    }
+
+    private static func deletePersonalPreferences(for voucherID: UUID, in context: NSManagedObjectContext) {
+        let request = PersonalVoucherPreference.fetchRequest()
+        request.predicate = NSPredicate(format: "voucherID == %@", voucherID as CVarArg)
+
+        do {
+            for preference in try context.fetch(request) {
+                context.delete(preference)
+            }
+        } catch {
+            debugLog("⚠️ Suppression des préférences du doublon impossible : \(error.localizedDescription)")
         }
     }
 

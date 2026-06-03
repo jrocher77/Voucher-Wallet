@@ -87,12 +87,38 @@ struct ContentView: View {
     private var vouchers: [Voucher] {
         _ = receivedShareRevision
         var seenObjectIDs = Set<NSManagedObjectID>()
-        return (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
+        let uniqueObjects = (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
             guard voucher.managedObjectContext != nil, !voucher.isDeleted else { return false }
             return seenObjectIDs.insert(voucher.objectID).inserted
         }.filter { voucher in
             voucher.managedObjectContext != nil && !voucher.isDeleted
         }
+        return uniqueObjects.reduce(into: [UUID: Voucher]()) { result, voucher in
+            guard let existing = result[voucher.id] else {
+                result[voucher.id] = voucher
+                return
+            }
+            result[voucher.id] = Self.preferredVisibleVoucher(existing, voucher)
+        }.map(\.value)
+    }
+
+    private static func preferredVisibleVoucher(_ lhs: Voucher, _ rhs: Voucher) -> Voucher {
+        let lhsScore = visibleVoucherScore(lhs)
+        let rhsScore = visibleVoucherScore(rhs)
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore ? lhs : rhs
+        }
+        return lhs.dateAdded <= rhs.dateAdded ? lhs : rhs
+    }
+
+    private static func visibleVoucherScore(_ voucher: Voucher) -> Int {
+        var score = 0
+        if voucher.isFavorite { score += 16 }
+        if voucher.amount != nil { score += 8 }
+        if voucher.codeType == .qrCode { score += 4 }
+        if voucher.codeImageData != nil { score += 2 }
+        if voucher.pdfData != nil { score += 1 }
+        return score
     }
 
     private struct VoucherListItem: Identifiable {

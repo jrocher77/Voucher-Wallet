@@ -47,7 +47,15 @@ final class FavoritesManager {
         do {
             let request = Voucher.fetchRequest()
             let vouchers = try modelContext.fetch(request).filter(\.isFavorite)
-            return vouchers.sorted {
+            let uniqueVouchers = vouchers.reduce(into: [UUID: Voucher]()) { result, voucher in
+                guard let existing = result[voucher.id] else {
+                    result[voucher.id] = voucher
+                    return
+                }
+                result[voucher.id] = Self.preferredFavoriteVoucher(existing, voucher)
+            }.map(\.value)
+
+            return uniqueVouchers.sorted {
                 $0.sortOrder == $1.sortOrder
                     ? $0.dateAdded > $1.dateAdded
                     : $0.sortOrder < $1.sortOrder
@@ -56,6 +64,24 @@ final class FavoritesManager {
             debugLog("Erreur lors de la récupération des favoris: \(error)")
             return []
         }
+    }
+
+    private static func preferredFavoriteVoucher(_ lhs: Voucher, _ rhs: Voucher) -> Voucher {
+        let lhsScore = favoriteVoucherScore(lhs)
+        let rhsScore = favoriteVoucherScore(rhs)
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore ? lhs : rhs
+        }
+        return lhs.dateAdded <= rhs.dateAdded ? lhs : rhs
+    }
+
+    private static func favoriteVoucherScore(_ voucher: Voucher) -> Int {
+        var score = 0
+        if voucher.amount != nil { score += 8 }
+        if voucher.codeType == .qrCode { score += 4 }
+        if voucher.codeImageData != nil { score += 2 }
+        if voucher.pdfData != nil { score += 1 }
+        return score
     }
 
     static func notifyChange() {

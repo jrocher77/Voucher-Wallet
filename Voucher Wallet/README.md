@@ -56,8 +56,9 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 
 ### ☁️ Synchronisation iCloud
 - **CloudKit privé** : Synchronisation automatique des bons et dépenses entre les appareils connectés au même compte iCloud, avec traitement des notifications distantes CloudKit, bandeau discret au démarrage d'une synchronisation, avertissement si elle est impossible et alerte uniquement en cas de problème
-- **Partage iCloud** : Un propriétaire peut partager un bon avec plusieurs proches depuis son détail ; l'ouverture du partage affiche un statut d'initialisation dédié, les participants peuvent l'utiliser, saisir leurs propres dépenses et tirer la liste ou le détail vers le bas pour relire les changements partagés reçus, avec un miroir CloudKit manuel des dépenses pour fiabiliser le rafraîchissement
+- **Partage iCloud** : Un propriétaire peut partager un bon avec plusieurs proches depuis son détail ; l'ouverture du partage affiche un statut d'initialisation dédié, les participants peuvent l'utiliser, saisir leurs propres dépenses et tirer la liste ou le détail vers le bas pour relire les changements partagés reçus, avec un miroir CloudKit manuel idempotent des dépenses pour fiabiliser le rafraîchissement
 - **Dépenses conservées** : Une dépense saisie n'est plus supprimable ; elle peut être modifiée et mise à 0 € afin de corriger une erreur tout en conservant son identifiant de synchronisation
+- **Historique partagé** : Lorsqu'un bon est partagé, tout l'historique des dépenses reste attaché au bon, visible par le propriétaire et les invités, et chaque participant peut modifier les dépenses
 - **Récupération d'acceptation** : Si le store partagé local CloudKit ne s'initialise plus pendant l'acceptation d'une invitation, l'app prépare une réinitialisation locale au prochain lancement et affiche une consigne claire de relance
 - **Dépenses attribuées** : Les dépenses créées pendant un partage affichent leur auteur et leur heure de saisie
 - **Favoris personnels** : Un bon reçu peut être favori et apparaître dans le widget, sans synchroniser ce choix avec le propriétaire

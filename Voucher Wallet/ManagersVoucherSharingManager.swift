@@ -47,6 +47,7 @@ final class VoucherSharingManager {
     private let sharingDiagnosticKey = "lastCloudSharingDiagnostic"
     private let sharingOperationActiveKey = "cloudSharingOperationActive"
     private let shareMetadataRetryDelays: [TimeInterval] = [0.0, 1.0, 3.0, 6.0, 12.0]
+    nonisolated private static let storedShareZonesKey = "voucherShareZonesByVoucherID"
 
     private struct ReceivedShareRemoval {
         let zoneID: CKRecordZone.ID
@@ -54,6 +55,20 @@ final class VoucherSharingManager {
         let sharedStore: NSPersistentStore
         let onFinished: (() -> Void)?
         var attempt: Int
+    }
+
+    private struct StoredShareZone: Codable {
+        let zoneName: String
+        let ownerName: String
+
+        nonisolated init(zoneID: CKRecordZone.ID) {
+            zoneName = zoneID.zoneName
+            ownerName = zoneID.ownerName
+        }
+
+        nonisolated var zoneID: CKRecordZone.ID {
+            CKRecordZone.ID(zoneName: zoneName, ownerName: ownerName)
+        }
     }
 
     init(persistence: SharedModelContainer) {
@@ -102,9 +117,53 @@ final class VoucherSharingManager {
         UserDefaults.standard.set(false, forKey: sharingOperationActiveKey)
     }
 
+    fileprivate func rememberShareZone(_ zoneID: CKRecordZone.ID, for voucherID: UUID) {
+        Self.rememberShareZone(zoneID, for: voucherID)
+    }
+
+    nonisolated private static func rememberShareZone(_ zoneID: CKRecordZone.ID, for voucherID: UUID) {
+        var zones = storedShareZones()
+        zones[voucherID.uuidString] = StoredShareZone(zoneID: zoneID)
+        saveStoredShareZones(zones)
+    }
+
+    nonisolated private static func storedShareZone(for voucherID: UUID) -> CKRecordZone.ID? {
+        storedShareZones()[voucherID.uuidString]?.zoneID
+    }
+
+    nonisolated private static func forgetShareZone(for voucherID: UUID) {
+        var zones = storedShareZones()
+        zones.removeValue(forKey: voucherID.uuidString)
+        saveStoredShareZones(zones)
+    }
+
+    nonisolated private static func storedShareZones() -> [String: StoredShareZone] {
+        let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
+        guard let data = defaults.data(forKey: storedShareZonesKey),
+              let zones = try? JSONDecoder().decode([String: StoredShareZone].self, from: data) else {
+            return [:]
+        }
+        return zones
+    }
+
+    nonisolated private static func saveStoredShareZones(_ zones: [String: StoredShareZone]) {
+        let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
+        if zones.isEmpty {
+            defaults.removeObject(forKey: storedShareZonesKey)
+            return
+        }
+        if let data = try? JSONEncoder().encode(zones) {
+            defaults.set(data, forKey: storedShareZonesKey)
+        }
+    }
+
     func share(for voucher: Voucher) -> CKShare? {
         guard !voucher.objectID.isTemporaryID else { return nil }
-        return try? persistence.container.fetchShares(matching: [voucher.objectID])[voucher.objectID]
+        let share = try? persistence.container.fetchShares(matching: [voucher.objectID])[voucher.objectID]
+        if let share {
+            rememberShareZone(share.recordID.zoneID, for: voucher.id)
+        }
+        return share
     }
 
     func share(for objectID: NSManagedObjectID) async throws -> CKShare? {
@@ -394,29 +453,6 @@ final class VoucherSharingManager {
         }
     }
 
-    func prepareNewSharingPeriodIfNeeded(for voucher: Voucher) throws {
-        guard voucher.sharingStartedAt == nil else { return }
-
-        let historicalExpenses = voucher.activeExpensesList
-        let activeTotal = historicalExpenses.reduce(0) { $0 + $1.amount }
-        voucher.spentBeforeCurrentShare += activeTotal
-        voucher.activeSharingPeriodID = UUID()
-
-        for expense in historicalExpenses {
-            markSharingStep("archivage d'une dépense existante")
-            expense.archivedVoucherID = voucher.id
-            expense.sharingPeriodID = nil
-            expense.voucher = nil
-        }
-
-        if voucher.objectID.isTemporaryID {
-            markSharingStep("obtention d'un identifiant permanent")
-            try persistence.container.viewContext.obtainPermanentIDs(for: [voucher])
-        }
-        markSharingStep("sauvegarde des dépenses archivées")
-        try persistence.container.viewContext.save()
-    }
-
     func createShare(for objectID: NSManagedObjectID) async throws -> (share: CKShare, container: CKContainer) {
         markSharingStep("chargement du bon")
         let persistentContainer = persistence.container
@@ -438,24 +474,14 @@ final class VoucherSharingManager {
                     let title = storeName.isEmpty ? "Bon d'achat" : "Bon \(storeName)"
 
                     if voucher.sharingStartedAt == nil {
-                        let historicalExpenses = voucher.activeExpensesList
-                        let activeTotal = historicalExpenses.reduce(0) { $0 + $1.amount }
-                        voucher.spentBeforeCurrentShare += activeTotal
-                        voucher.activeSharingPeriodID = UUID()
-
-                        for expense in historicalExpenses {
-                            expense.archivedVoucherID = voucher.id
-                            expense.sharingPeriodID = nil
-                            expense.voucher = nil
-                        }
-
-                        if voucher.objectID.isTemporaryID {
-                            try backgroundContext.obtainPermanentIDs(for: [voucher])
+                        let objectsNeedingPermanentIDs = ([voucher] + voucher.activeExpensesList).filter(\.objectID.isTemporaryID)
+                        if !objectsNeedingPermanentIDs.isEmpty {
+                            try backgroundContext.obtainPermanentIDs(for: objectsNeedingPermanentIDs)
                         }
                         try backgroundContext.save()
                     }
 
-                    persistentContainer.share([voucher], to: nil) { _, share, cloudContainer, error in
+                    persistentContainer.share([voucher] + voucher.activeExpensesList, to: nil) { _, share, cloudContainer, error in
                     if let error {
                         debugLog("Erreur lors de la préparation du partage CloudKit: \(error.localizedDescription)")
                         continuation.resume(throwing: error)
@@ -468,6 +494,7 @@ final class VoucherSharingManager {
                     }
                         share[CKShare.SystemFieldKey.title] = title as CKRecordValue
                         share.publicPermission = .none
+                        Self.rememberShareZone(share.recordID.zoneID, for: voucher.id)
                         let resolvedContainer = cloudContainer ?? CKContainer(identifier: cloudContainerIdentifier)
                     continuation.resume(returning: (share, resolvedContainer))
                 }
@@ -554,6 +581,7 @@ final class VoucherSharingManager {
                     debugLog("Erreur lors de la sortie du partage: \(error.localizedDescription)")
                 } else {
                     FavoritesManager.deletePersonalPreference(for: removal.voucherID, in: self.persistence.container.viewContext)
+                    Self.forgetShareZone(for: removal.voucherID)
                 }
                 self.persistence.requestCloudRefresh()
                 NotificationCenter.default.post(name: .voucherDidChange, object: removal.voucherID)
@@ -573,23 +601,32 @@ final class VoucherSharingManager {
     }
 
     func revokeIfNeeded(for voucher: Voucher) {
-        guard let share = share(for: voucher), let privateStore = persistence.privateStore else { return }
+        guard let privateStore = persistence.privateStore else { return }
+        let voucherID = voucher.id
+        let zoneID = share(for: voucher)?.recordID.zoneID ?? Self.storedShareZone(for: voucherID)
+        guard let zoneID else { return }
+
         voucher.sharingStartedAt = nil
-        voucher.activeSharingPeriodID = nil
         try? persistence.container.viewContext.save()
         NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
         NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucher.id)
         persistence.container.purgeObjectsAndRecordsInZone(
-            with: share.recordID.zoneID,
+            with: zoneID,
             in: privateStore
-        ) { _, _ in
-            WidgetReloader.reloadAllWidgets()
+        ) { _, error in
+            if let error {
+                debugLog("Erreur lors de la purge de la zone CloudKit du bon supprimé: \(error.localizedDescription)")
+            } else {
+                Self.forgetShareZone(for: voucherID)
+            }
+            Task { @MainActor in
+                WidgetReloader.reloadAllWidgets()
+            }
         }
     }
 
     func markSharingStopped(for voucher: Voucher) {
         voucher.sharingStartedAt = nil
-        voucher.activeSharingPeriodID = nil
         pendingParticipantResolutionObjectIDs.remove(voucher.objectID)
         try? persistence.container.viewContext.save()
         NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
@@ -871,6 +908,9 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
 
             if let share = currentShare {
                 manager.restrictParticipantsToOwnerManagedInvites(in: share)
+                if let voucher = hostController?.voucher {
+                    manager.rememberShareZone(share.recordID.zoneID, for: voucher.id)
+                }
             }
 
             if let voucher = hostController?.voucher {

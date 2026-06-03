@@ -629,6 +629,7 @@ struct VoucherDetailView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
             sharingManager.revokeIfNeeded(for: voucherToDelete)
+            SharedModelContainer.rememberDeletedVoucherForLegacyMigration(voucherToDelete)
             voucherToDelete.deletePersonalPreference(in: modelContext)
             modelContext.delete(voucherToDelete)
 
@@ -645,9 +646,7 @@ struct VoucherDetailView: View {
     }
 
     private func canModify(_ expense: Expense) -> Bool {
-        guard voucher.isReceivedShare else { return true }
-        return expense.authorRecordName != nil &&
-            expense.authorRecordName == sharingManager.authorIdentifier
+        true
     }
 
     private func toggleFavorite() {

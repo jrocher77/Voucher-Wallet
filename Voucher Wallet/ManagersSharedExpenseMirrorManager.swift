@@ -15,7 +15,6 @@ private struct SharedExpenseMirrorPayload {
     let note: String?
     let authorDisplayName: String?
     let authorRecordName: String?
-    let sharingPeriodID: UUID?
     let isDeleted: Bool
 }
 
@@ -28,7 +27,6 @@ private enum SharedExpenseMirrorRecord {
     static let note = "note"
     static let authorDisplayName = "authorDisplayName"
     static let authorRecordName = "authorRecordName"
-    static let sharingPeriodID = "sharingPeriodID"
     static let isDeleted = "isDeleted"
     static let modifiedAt = "modifiedAt"
 
@@ -40,7 +38,6 @@ private enum SharedExpenseMirrorRecord {
         note,
         authorDisplayName,
         authorRecordName,
-        sharingPeriodID,
         isDeleted,
         modifiedAt
     ]
@@ -84,7 +81,6 @@ extension VoucherSharingManager {
             note: expense.note,
             authorDisplayName: expense.authorDisplayName,
             authorRecordName: expense.authorRecordName,
-            sharingPeriodID: expense.sharingPeriodID,
             isDeleted: isDeleted
         )
     }
@@ -132,7 +128,6 @@ extension VoucherSharingManager {
         record[SharedExpenseMirrorRecord.note] = payload.note as CKRecordValue?
         record[SharedExpenseMirrorRecord.authorDisplayName] = payload.authorDisplayName as CKRecordValue?
         record[SharedExpenseMirrorRecord.authorRecordName] = payload.authorRecordName as CKRecordValue?
-        record[SharedExpenseMirrorRecord.sharingPeriodID] = payload.sharingPeriodID?.uuidString as CKRecordValue?
         record[SharedExpenseMirrorRecord.isDeleted] = (payload.isDeleted ? 1 : 0) as CKRecordValue
         record[SharedExpenseMirrorRecord.modifiedAt] = Date() as CKRecordValue
 
@@ -150,7 +145,6 @@ extension VoucherSharingManager {
             recordType: SharedExpenseMirrorRecord.recordType,
             predicate: NSPredicate(format: "%K == %@", SharedExpenseMirrorRecord.voucherID, voucher.id.uuidString)
         )
-        let currentSharingPeriodID = voucher.activeSharingPeriodID
         let desiredKeys = SharedExpenseMirrorRecord.importDesiredKeys
         let database = cloudDatabase(for: voucher)
 
@@ -163,9 +157,7 @@ extension VoucherSharingManager {
             )
             var didChange = importSharedExpenseMirrorResults(
                 result.matchResults,
-                into: voucher,
-                currentSharingPeriodID: currentSharingPeriodID,
-                sharingStartedAt: voucher.sharingStartedAt
+                into: voucher
             )
 
             while let cursor = result.queryCursor {
@@ -176,9 +168,7 @@ extension VoucherSharingManager {
                 )
                 didChange = importSharedExpenseMirrorResults(
                     result.matchResults,
-                    into: voucher,
-                    currentSharingPeriodID: currentSharingPeriodID,
-                    sharingStartedAt: voucher.sharingStartedAt
+                    into: voucher
                 ) || didChange
             }
 
@@ -195,39 +185,16 @@ extension VoucherSharingManager {
 
     private func importSharedExpenseMirrorResults(
         _ results: [(CKRecord.ID, Result<CKRecord, any Error>)],
-        into voucher: Voucher,
-        currentSharingPeriodID: UUID?,
-        sharingStartedAt: Date?
+        into voucher: Voucher
     ) -> Bool {
         var didChange = false
         for (_, recordResult) in results {
-            guard case .success(let record) = recordResult,
-                  mirrorRecord(record, belongsTo: currentSharingPeriodID, sharingStartedAt: sharingStartedAt) else {
+            guard case .success(let record) = recordResult else {
                 continue
             }
             didChange = importSharedExpenseMirror(record, into: voucher) || didChange
         }
         return didChange
-    }
-
-    private func mirrorRecord(
-        _ record: CKRecord,
-        belongsTo currentSharingPeriodID: UUID?,
-        sharingStartedAt: Date?
-    ) -> Bool {
-        guard let recordSharingPeriodIDString = stringValue(record[SharedExpenseMirrorRecord.sharingPeriodID]) else {
-            guard currentSharingPeriodID != nil else { return true }
-            guard let sharingStartedAt else { return true }
-            let modifiedAt = record[SharedExpenseMirrorRecord.modifiedAt] as? Date ?? record.modificationDate
-            guard let modifiedAt else { return false }
-            return modifiedAt >= sharingStartedAt.addingTimeInterval(-5)
-        }
-
-        guard let currentSharingPeriodID,
-              let recordSharingPeriodID = UUID(uuidString: recordSharingPeriodIDString) else {
-            return false
-        }
-        return recordSharingPeriodID == currentSharingPeriodID
     }
 
     private func importSharedExpenseMirror(_ record: CKRecord, into voucher: Voucher) -> Bool {
@@ -238,7 +205,6 @@ extension VoucherSharingManager {
 
         let isDeleted = boolValue(record[SharedExpenseMirrorRecord.isDeleted])
         let context = persistence.container.viewContext
-        let existing = voucher.activeExpensesList.first { $0.id == expenseID }
 
         guard let recordAmount = doubleValue(record[SharedExpenseMirrorRecord.amount]),
               let date = record[SharedExpenseMirrorRecord.date] as? Date else {
@@ -246,20 +212,66 @@ extension VoucherSharingManager {
         }
         let amount = isDeleted ? 0 : recordAmount
 
+        let matchingExpenses = fetchExpenses(with: expenseID, in: context)
+        let existing = preferredExistingExpense(from: matchingExpenses, for: voucher)
         let expense = existing ?? Expense(context: context, id: expenseID, amount: amount, date: date)
         if existing == nil {
+            SharedModelContainer.assign(expense, toStoreOf: voucher)
+            expense.voucher = voucher
+        } else if expense.voucher?.id != voucher.id {
             SharedModelContainer.assign(expense, toStoreOf: voucher)
             expense.voucher = voucher
         }
 
         var didChange = existing == nil
+        didChange = mergeDuplicateExpenses(
+            matchingExpenses.filter { $0.objectID != expense.objectID },
+            into: expense,
+            in: context
+        ) || didChange
         didChange = update(&expense.amount, amount) || didChange
         didChange = update(&expense.date, date) || didChange
         didChange = update(&expense.note, stringValue(record[SharedExpenseMirrorRecord.note])) || didChange
         didChange = update(&expense.authorDisplayName, stringValue(record[SharedExpenseMirrorRecord.authorDisplayName])) || didChange
         didChange = update(&expense.authorRecordName, stringValue(record[SharedExpenseMirrorRecord.authorRecordName])) || didChange
-        let sharingPeriodID = stringValue(record[SharedExpenseMirrorRecord.sharingPeriodID]).flatMap(UUID.init(uuidString:))
-        didChange = update(&expense.sharingPeriodID, sharingPeriodID) || didChange
+        return didChange
+    }
+
+    private func fetchExpenses(with id: UUID, in context: NSManagedObjectContext) -> [Expense] {
+        let request = NSFetchRequest<Expense>(entityName: "Expense")
+        request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        return (try? context.fetch(request)) ?? []
+    }
+
+    private func preferredExistingExpense(from expenses: [Expense], for voucher: Voucher) -> Expense? {
+        expenses.first { expense in
+            expense.managedObjectContext != nil &&
+                !expense.isDeleted &&
+                expense.voucher?.id == voucher.id
+        } ?? expenses.first { expense in
+            expense.managedObjectContext != nil && !expense.isDeleted
+        }
+    }
+
+    private func mergeDuplicateExpenses(
+        _ duplicates: [Expense],
+        into canonical: Expense,
+        in context: NSManagedObjectContext
+    ) -> Bool {
+        var didChange = false
+        for duplicate in duplicates where duplicate.managedObjectContext != nil && !duplicate.isDeleted {
+            if canonical.note == nil {
+                canonical.note = duplicate.note
+            }
+            if canonical.authorDisplayName == nil {
+                canonical.authorDisplayName = duplicate.authorDisplayName
+            }
+            if canonical.authorRecordName == nil {
+                canonical.authorRecordName = duplicate.authorRecordName
+            }
+            context.delete(duplicate)
+            didChange = true
+        }
         return didChange
     }
 

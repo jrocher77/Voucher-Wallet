@@ -249,7 +249,6 @@ struct AddExpenseView: View {
             if voucher.isInActiveShare {
                 expense.authorDisplayName = sharingManager.storedDisplayName
                 expense.authorRecordName = sharingManager.authorIdentifier
-                expense.sharingPeriodID = voucher.activeSharingPeriodID
             }
             SharedModelContainer.assign(expense, toStoreOf: voucher)
             expense.voucher = voucher
@@ -297,6 +296,7 @@ struct AddExpenseView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
             sharingManager.revokeIfNeeded(for: voucherToDelete)
+            SharedModelContainer.rememberDeletedVoucherForLegacyMigration(voucherToDelete)
             voucherToDelete.deletePersonalPreference(in: modelContext)
             modelContext.delete(voucherToDelete)
 

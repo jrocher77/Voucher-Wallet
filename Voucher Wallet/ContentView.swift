@@ -148,7 +148,7 @@ struct ContentView: View {
             self.storeName = voucher.storeName
             self.voucherNumber = voucher.voucherNumber
             self.amount = amount
-            let remainingBalance = (amount.map { $0 - voucher.spentBeforeCurrentShare - activeTotal } ?? 0).roundedToCurrencyCents
+            let remainingBalance = voucher.remainingBalance
             self.remainingBalance = remainingBalance
             self.totalExpenses = amount.map { $0 - remainingBalance } ?? activeTotal
             self.expirationDate = voucher.expirationDate
@@ -929,6 +929,7 @@ struct ContentView: View {
 
         guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
         sharingManager.revokeIfNeeded(for: voucherToDelete)
+        SharedModelContainer.rememberDeletedVoucherForLegacyMigration(voucherToDelete)
         voucherToDelete.deletePersonalPreference(in: modelContext)
         modelContext.delete(voucherToDelete)
         do {

@@ -15,6 +15,8 @@ final class SharedModelContainer {
     nonisolated static let sharedConfigurationName = "Shared"
     nonisolated static let cloudSyncStatusNotificationName = Notification.Name("voucherCloudSyncStatusDidChange")
     private static let resetSharedStoreOnNextLaunchKey = "resetSharedCloudStoreOnNextLaunch"
+    private static let deletedLegacyVoucherIDsKey = "deletedLegacyVoucherIDs"
+    private static let deletedLegacyVoucherKeysKey = "deletedLegacyVoucherKeys"
     static weak var active: SharedModelContainer?
 
     let container: NSPersistentCloudKitContainer
@@ -118,6 +120,29 @@ final class SharedModelContainer {
 
     static func create(inMemory: Bool = false, enablesCloudSync: Bool = true) throws -> NSPersistentCloudKitContainer {
         try SharedModelContainer(inMemory: inMemory, enablesCloudSync: enablesCloudSync).container
+    }
+
+    static func rememberDeletedVoucherForLegacyMigration(_ voucher: Voucher) {
+        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+
+        var deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
+        deletedIDs.insert(voucher.id.uuidString)
+        defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
+
+        if let key = deletedLegacyVoucherKey(for: voucher.voucherNumber) {
+            var deletedKeys = Set(defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? [])
+            deletedKeys.insert(key)
+            defaults.set(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
+        }
+    }
+
+    private static func deletedLegacyVoucherKey(for voucherNumber: String) -> String? {
+        let normalized = voucherNumber
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .uppercased()
+        return normalized.isEmpty ? nil : normalized
     }
 
     func markSharedStoreForResetOnNextLaunch(reason: String) {
@@ -396,7 +421,7 @@ final class SharedModelContainer {
     /// Le fichier source est conserve afin de ne jamais detruire une sauvegarde existante.
     private func importLegacySwiftDataStoreIfNeeded() {
         let migrationVersionKey = "legacySwiftDataMigrationVersion"
-        let migrationVersion = 4
+        let migrationVersion = 5
         let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
         guard defaults.integer(forKey: migrationVersionKey) < migrationVersion else { return }
 
@@ -414,6 +439,8 @@ final class SharedModelContainer {
 
         do {
             try context.performAndWait {
+                let deletedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherIDsKey) ?? [])
+                let deletedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? [])
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
                     existingVouchers.map { ($0.id, $0) },
@@ -433,6 +460,22 @@ final class SharedModelContainer {
                     var importedExpenseIDs = expenseIDs
 
                     for snapshot in snapshots {
+                        if Self.isDeletedLegacyVoucher(
+                            snapshot,
+                            deletedIDs: deletedLegacyVoucherIDs,
+                            deletedKeys: deletedLegacyVoucherKeys
+                        ) {
+                            if let existingVoucher = vouchersByID[snapshot.id]
+                                ?? Self.legacyVoucherKey(for: snapshot).flatMap({ vouchersByLegacyKey[$0] }) {
+                                existingVoucher.deletePersonalPreference(in: context)
+                                context.delete(existingVoucher)
+                                vouchersByID.removeValue(forKey: snapshot.id)
+                                if let key = Self.legacyVoucherKey(for: snapshot) {
+                                    vouchersByLegacyKey.removeValue(forKey: key)
+                                }
+                            }
+                            continue
+                        }
                         let codeType = Self.normalizedLegacyCodeType(snapshot.codeType)
                         let voucher: Voucher
                         if let existingVoucher = vouchersByID[snapshot.id]
@@ -575,6 +618,15 @@ final class SharedModelContainer {
 
     private static func legacyVoucherKey(for snapshot: LegacyVoucherSnapshot) -> String? {
         legacyVoucherKey(voucherNumber: snapshot.voucherNumber)
+    }
+
+    private static func isDeletedLegacyVoucher(
+        _ snapshot: LegacyVoucherSnapshot,
+        deletedIDs: Set<String>,
+        deletedKeys: Set<String>
+    ) -> Bool {
+        deletedIDs.contains(snapshot.id.uuidString) ||
+            legacyVoucherKey(for: snapshot).map(deletedKeys.contains) == true
     }
 
     private static func legacyVoucherKey(for voucher: Voucher) -> String? {

@@ -49,12 +49,12 @@ final class Voucher: NSManagedObject, Identifiable {
     }
 
     var expensesList: [Expense] {
-        activeExpensesList + archivedExpenses
+        activeExpensesList
     }
 
     var remainingBalance: Double {
         guard let initialAmount = amount else { return 0 }
-        let balance = initialAmount - spentBeforeCurrentShare - activeExpensesList.reduce(0) { $0 + $1.amount }
+        let balance = initialAmount - expensesList.reduce(0) { $0 + $1.amount }
         let cents = Int((balance * 100).rounded())
         return cents == 0 ? 0 : Double(cents) / 100
     }
@@ -163,12 +163,6 @@ final class Voucher: NSManagedObject, Identifiable {
         }
     }
 
-    private var archivedExpenses: [Expense] {
-        guard sharingRole != .recipient, let context = managedObjectContext else { return [] }
-        let request = Expense.fetchRequest()
-        request.predicate = NSPredicate(format: "voucher == nil AND archivedVoucherID == %@", id as CVarArg)
-        return (try? context.fetch(request)) ?? []
-    }
 }
 
 extension Voucher {

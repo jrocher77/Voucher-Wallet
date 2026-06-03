@@ -17,6 +17,8 @@ final class SharedModelContainer {
     private static let resetSharedStoreOnNextLaunchKey = "resetSharedCloudStoreOnNextLaunch"
     private static let deletedLegacyVoucherIDsKey = "deletedLegacyVoucherIDs"
     private static let deletedLegacyVoucherKeysKey = "deletedLegacyVoucherKeys"
+    private static let migratedLegacyVoucherIDsKey = "migratedLegacyVoucherIDs"
+    private static let migratedLegacyVoucherKeysKey = "migratedLegacyVoucherKeys"
     static weak var active: SharedModelContainer?
 
     let container: NSPersistentCloudKitContainer
@@ -421,9 +423,10 @@ final class SharedModelContainer {
     /// Le fichier source est conserve afin de ne jamais detruire une sauvegarde existante.
     private func importLegacySwiftDataStoreIfNeeded() {
         let migrationVersionKey = "legacySwiftDataMigrationVersion"
-        let migrationVersion = 5
+        let migrationVersion = 6
         let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
-        guard defaults.integer(forKey: migrationVersionKey) < migrationVersion else { return }
+        let previousMigrationVersion = defaults.integer(forKey: migrationVersionKey)
+        guard previousMigrationVersion < migrationVersion else { return }
 
         guard let privateStore,
               let root = privateStore.url?.deletingLastPathComponent() else { return }
@@ -441,6 +444,9 @@ final class SharedModelContainer {
             try context.performAndWait {
                 let deletedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherIDsKey) ?? [])
                 let deletedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? [])
+                var migratedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherIDsKey) ?? [])
+                var migratedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherKeysKey) ?? [])
+                let alreadyRanLegacyMigration = previousMigrationVersion > 0
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
                     existingVouchers.map { ($0.id, $0) },
@@ -455,6 +461,14 @@ final class SharedModelContainer {
                         Self.preferredMigrationVoucher(existing, candidate)
                     }
                 )
+                if alreadyRanLegacyMigration {
+                    for snapshot in snapshots {
+                        migratedLegacyVoucherIDs.insert(snapshot.id.uuidString)
+                        if let key = Self.legacyVoucherKey(for: snapshot) {
+                            migratedLegacyVoucherKeys.insert(key)
+                        }
+                    }
+                }
                 if !snapshots.isEmpty {
                     let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).map(\.id))
                     var importedExpenseIDs = expenseIDs
@@ -482,6 +496,12 @@ final class SharedModelContainer {
                             ?? Self.legacyVoucherKey(for: snapshot).flatMap({ vouchersByLegacyKey[$0] }) {
                             voucher = existingVoucher
                             Self.update(voucher, from: snapshot, codeType: codeType)
+                        } else if Self.isAlreadyMigratedLegacyVoucher(
+                            snapshot,
+                            migratedIDs: migratedLegacyVoucherIDs,
+                            migratedKeys: migratedLegacyVoucherKeys
+                        ) {
+                            continue
                         } else {
                             voucher = Voucher(
                                 context: context,
@@ -503,6 +523,10 @@ final class SharedModelContainer {
                             if let key = Self.legacyVoucherKey(for: snapshot) {
                                 vouchersByLegacyKey[key] = voucher
                             }
+                        }
+                        migratedLegacyVoucherIDs.insert(snapshot.id.uuidString)
+                        if let key = Self.legacyVoucherKey(for: snapshot) {
+                            migratedLegacyVoucherKeys.insert(key)
                         }
 
                         // Favoris et ordre sont personnels : on restaure ceux de la 1.1.1 sans effacer
@@ -532,6 +556,8 @@ final class SharedModelContainer {
                 if context.hasChanges {
                     try context.save()
                 }
+                defaults.set(Array(migratedLegacyVoucherIDs), forKey: Self.migratedLegacyVoucherIDsKey)
+                defaults.set(Array(migratedLegacyVoucherKeys), forKey: Self.migratedLegacyVoucherKeysKey)
             }
             defaults.set(migrationVersion, forKey: migrationVersionKey)
             WidgetReloader.reloadFavoriteVouchersWidget()
@@ -627,6 +653,15 @@ final class SharedModelContainer {
     ) -> Bool {
         deletedIDs.contains(snapshot.id.uuidString) ||
             legacyVoucherKey(for: snapshot).map(deletedKeys.contains) == true
+    }
+
+    private static func isAlreadyMigratedLegacyVoucher(
+        _ snapshot: LegacyVoucherSnapshot,
+        migratedIDs: Set<String>,
+        migratedKeys: Set<String>
+    ) -> Bool {
+        migratedIDs.contains(snapshot.id.uuidString) ||
+            legacyVoucherKey(for: snapshot).map(migratedKeys.contains) == true
     }
 
     private static func legacyVoucherKey(for voucher: Voucher) -> String? {

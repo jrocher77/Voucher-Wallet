@@ -651,9 +651,10 @@ struct ContentView: View {
                 || message.contains("synchronisation")
                 || message.contains("Acceptation")
                 || message.contains("Initialisation")
+                || message.contains("Configuration")
             return CompactCloudStatus(
                 text: message,
-                systemImage: "person.2.badge.gearshape",
+                systemImage: "arrow.triangle.2.circlepath.icloud",
                 tint: .blue,
                 isLoading: isLoading
             )
@@ -725,7 +726,7 @@ struct ContentView: View {
 
         guard let message else { return }
         let delay: TimeInterval
-        if message.contains("Acceptation") || message.contains("synchronisation") || message.contains("Initialisation") || message.contains("...") {
+        if message.contains("Acceptation") || message.contains("synchronisation") || message.contains("Initialisation") || message.contains("Configuration") || message.contains("...") {
             delay = 6
         } else if message.contains("échou") || message.contains("impossible") {
             delay = 8

@@ -44,6 +44,10 @@ private enum SharedExpenseMirrorRecord {
 }
 
 extension VoucherSharingManager {
+    private var sharedExpenseMirrorRetryDelays: [TimeInterval] {
+        [0.7, 2.0, 5.0, 10.0]
+    }
+
     private var locallyDeletedSharedExpenseDefaultsKey: String {
         "locallyDeletedSharedExpenseIDs"
     }
@@ -64,7 +68,7 @@ extension VoucherSharingManager {
         let voucherObjectID = voucher.objectID
 
         Task { @MainActor [weak self] in
-            await self?.saveSharedExpenseMirror(payload, voucherObjectID: voucherObjectID)
+            await self?.saveSharedExpenseMirror(payload, voucherObjectID: voucherObjectID, attempt: 0)
         }
     }
 
@@ -105,11 +109,21 @@ extension VoucherSharingManager {
 
     private func saveSharedExpenseMirror(
         _ payload: SharedExpenseMirrorPayload,
-        voucherObjectID: NSManagedObjectID
+        voucherObjectID: NSManagedObjectID,
+        attempt: Int
     ) async {
-        guard let voucher = try? persistence.container.viewContext.existingObject(with: voucherObjectID) as? Voucher,
-              let zoneID = await shareZoneID(for: voucher) else {
-            debugLog("[Partage][Miroir] Sauvegarde ignoree: zone du partage introuvable")
+        guard let voucher = try? persistence.container.viewContext.existingObject(with: voucherObjectID) as? Voucher else {
+            debugLog("[Partage][Miroir] Sauvegarde ignorée: bon introuvable")
+            return
+        }
+
+        guard let zoneID = await shareZoneID(for: voucher) else {
+            scheduleSharedExpenseMirrorRetry(
+                payload,
+                voucherObjectID: voucherObjectID,
+                attempt: attempt,
+                reason: "zone du partage introuvable"
+            )
             return
         }
 
@@ -133,9 +147,51 @@ extension VoucherSharingManager {
 
         do {
             _ = try await database.save(record)
+            debugLog("[Partage][Miroir] Dépense miroir sauvegardée (tentative \(attempt + 1))")
         } catch {
-            debugLog("[Partage][Miroir] Sauvegarde CloudKit impossible: \(error.localizedDescription)")
+            if shouldRetrySharedExpenseMirrorSave(after: error) {
+                scheduleSharedExpenseMirrorRetry(
+                    payload,
+                    voucherObjectID: voucherObjectID,
+                    attempt: attempt,
+                    reason: error.localizedDescription
+                )
+            } else {
+                debugLog("[Partage][Miroir] Sauvegarde CloudKit impossible: \(error.localizedDescription)")
+            }
         }
+    }
+
+    private func scheduleSharedExpenseMirrorRetry(
+        _ payload: SharedExpenseMirrorPayload,
+        voucherObjectID: NSManagedObjectID,
+        attempt: Int,
+        reason: String
+    ) {
+        guard attempt < sharedExpenseMirrorRetryDelays.count else {
+            debugLog("[Partage][Miroir] Sauvegarde abandonnée après \(attempt + 1) tentative(s): \(reason)")
+            return
+        }
+
+        let delay = sharedExpenseMirrorRetryDelays[attempt]
+        debugLog("[Partage][Miroir] Nouvelle tentative dans \(delay)s: \(reason)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.saveSharedExpenseMirror(
+                    payload,
+                    voucherObjectID: voucherObjectID,
+                    attempt: attempt + 1
+                )
+            }
+        }
+    }
+
+    private func shouldRetrySharedExpenseMirrorSave(after error: Error) -> Bool {
+        let description = error.localizedDescription.lowercased()
+        return description.contains("not authenticated") == false &&
+            description.contains("permission") == false &&
+            description.contains("not authorized") == false
     }
 
     private func importSharedExpenseMirrors(for voucher: Voucher) async -> Bool {

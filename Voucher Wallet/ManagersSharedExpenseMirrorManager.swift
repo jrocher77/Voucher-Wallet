@@ -49,7 +49,11 @@ extension VoucherSharingManager {
     }
 
     func mirrorSharedExpense(_ expense: Expense, for voucher: Voucher, isDeleted: Bool = false) {
-        guard voucher.isInActiveShare else { return }
+        guard voucher.isInActiveShare ||
+                share(for: voucher) != nil ||
+                Self.storedShareZone(for: voucher.id) != nil else {
+            return
+        }
         let payload = sharedExpenseMirrorPayload(for: expense, voucher: voucher, isDeleted: isDeleted)
         let voucherObjectID = voucher.objectID
 
@@ -320,6 +324,9 @@ extension VoucherSharingManager {
     private func shareZoneID(for voucher: Voucher) async -> CKRecordZone.ID? {
         if let share = try? await share(for: voucher.objectID) {
             return share.recordID.zoneID
+        }
+        if let storedZoneID = Self.storedShareZone(for: voucher.id) {
+            return storedZoneID
         }
         return share(for: voucher)?.recordID.zoneID
     }

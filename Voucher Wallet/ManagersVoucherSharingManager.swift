@@ -46,6 +46,7 @@ final class VoucherSharingManager {
     private let sharingDiagnosticKey = "lastCloudSharingDiagnostic"
     private let sharingOperationActiveKey = "cloudSharingOperationActive"
     private let shareMetadataRetryDelays: [TimeInterval] = [0.0, 1.0, 3.0, 6.0, 12.0]
+    private let shareExpenseRetryDelays: [TimeInterval] = [0.5, 2.0, 5.0, 10.0]
     nonisolated private static let storedShareZonesKey = "voucherShareZonesByVoucherID"
 
     private struct ReceivedShareRemoval {
@@ -126,7 +127,7 @@ final class VoucherSharingManager {
         saveStoredShareZones(zones)
     }
 
-    nonisolated private static func storedShareZone(for voucherID: UUID) -> CKRecordZone.ID? {
+    nonisolated static func storedShareZone(for voucherID: UUID) -> CKRecordZone.ID? {
         storedShareZones()[voucherID.uuidString]?.zoneID
     }
 
@@ -199,6 +200,83 @@ final class VoucherSharingManager {
                     continuation.resume(throwing: error)
                 }
             }
+        }
+    }
+
+    func shareExpenseWithExistingShareIfNeeded(_ expense: Expense, for voucher: Voucher) {
+        guard !voucher.isReceivedShare,
+              !expense.objectID.isTemporaryID,
+              voucher.isInActiveShare || share(for: voucher) != nil || Self.storedShareZone(for: voucher.id) != nil else {
+            return
+        }
+
+        shareExpenseWithExistingShare(
+            expenseObjectID: expense.objectID,
+            voucherObjectID: voucher.objectID,
+            attempt: 0
+        )
+    }
+
+    private func shareExpenseWithExistingShare(
+        expenseObjectID: NSManagedObjectID,
+        voucherObjectID: NSManagedObjectID,
+        attempt: Int
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let expense = try? self.persistence.container.viewContext.existingObject(with: expenseObjectID) as? Expense,
+                  let voucher = try? self.persistence.container.viewContext.existingObject(with: voucherObjectID) as? Voucher,
+                  !voucher.isReceivedShare else {
+                return
+            }
+
+            guard let share = try? await self.share(for: voucherObjectID) else {
+                self.scheduleShareExpenseRetry(
+                    expenseObjectID: expenseObjectID,
+                    voucherObjectID: voucherObjectID,
+                    attempt: attempt,
+                    reason: "partage Core Data indisponible"
+                )
+                return
+            }
+
+            self.persistence.container.share([expense], to: share) { _, _, _, error in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let error {
+                        self.scheduleShareExpenseRetry(
+                            expenseObjectID: expenseObjectID,
+                            voucherObjectID: voucherObjectID,
+                            attempt: attempt,
+                            reason: error.localizedDescription
+                        )
+                    } else {
+                        debugLog("[Partage] Dépense ajoutée au partage Core Data")
+                    }
+                }
+            }
+        }
+    }
+
+    private func scheduleShareExpenseRetry(
+        expenseObjectID: NSManagedObjectID,
+        voucherObjectID: NSManagedObjectID,
+        attempt: Int,
+        reason: String
+    ) {
+        guard attempt < shareExpenseRetryDelays.count else {
+            debugLog("[Partage] Ajout de la dépense au partage abandonné: \(reason)")
+            return
+        }
+
+        let delay = shareExpenseRetryDelays[attempt]
+        debugLog("[Partage] Nouvelle tentative d'ajout de dépense au partage dans \(delay)s: \(reason)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.shareExpenseWithExistingShare(
+                expenseObjectID: expenseObjectID,
+                voucherObjectID: voucherObjectID,
+                attempt: attempt + 1
+            )
         }
     }
 

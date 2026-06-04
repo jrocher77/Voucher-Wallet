@@ -244,18 +244,24 @@ struct AddExpenseView: View {
                 expense.authorDisplayName = sharingManager.storedDisplayName
                 expense.authorRecordName = sharingManager.authorIdentifier
             }
-            SharedModelContainer.assign(expense, toStoreOf: voucher)
-            expense.voucher = voucher
+            linkExpense(expense, to: voucher)
             savedExpense = expense
             debugLog("   ✓ Nouvelle dépense créée")
         }
         
         do {
+            linkExpense(savedExpense, to: voucher)
+            if savedExpense.objectID.isTemporaryID {
+                try modelContext.obtainPermanentIDs(for: [savedExpense])
+            }
             try modelContext.save()
             debugLog("💾 Dépense sauvegardée avec succès")
-            modelContext.refresh(voucher, mergeChanges: true)
-            if voucher.isInActiveShare {
-                sharingManager.mirrorSharedExpense(savedExpense, for: voucher)
+            let persistedExpense = try persistedExpenseAfterSave(savedExpense, for: voucher)
+            sharingManager.shareExpenseWithExistingShareIfNeeded(persistedExpense, for: voucher)
+            sharingManager.mirrorSharedExpense(persistedExpense, for: voucher)
+            modelContext.processPendingChanges()
+            if voucher.managedObjectContext != nil && !voucher.isDeleted {
+                modelContext.refresh(voucher, mergeChanges: true)
             }
             NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
             NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
@@ -274,6 +280,29 @@ struct AddExpenseView: View {
             showingError = true
             debugLog("❌ Erreur de sauvegarde: \(error)")
         }
+    }
+
+    private func linkExpense(_ expense: Expense, to voucher: Voucher) {
+        SharedModelContainer.assign(expense, toStoreOf: voucher)
+        expense.voucher = voucher
+        voucher.mutableSetValue(forKey: "expenses").add(expense)
+    }
+
+    private func persistedExpenseAfterSave(_ expense: Expense, for voucher: Voucher) throws -> Expense {
+        let request = Expense.fetchRequest()
+        request.fetchLimit = 1
+        request.predicate = NSPredicate(format: "id == %@", expense.id as CVarArg)
+
+        guard let persistedExpense = try modelContext.fetch(request).first ?? (expense.isDeleted ? nil : expense) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        if persistedExpense.voucher?.id != voucher.id {
+            linkExpense(persistedExpense, to: voucher)
+            try modelContext.save()
+        }
+
+        return persistedExpense
     }
     
     private func deleteVoucher() {

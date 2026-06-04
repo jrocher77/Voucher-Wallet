@@ -472,7 +472,7 @@ final class SharedModelContainer {
     /// Le fichier source est conserve afin de ne jamais detruire une sauvegarde existante.
     private func importLegacySwiftDataStoreIfNeeded() {
         let migrationVersionKey = "legacySwiftDataMigrationVersion"
-        let migrationVersion = 6
+        let migrationVersion = 7
         let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
         let previousMigrationVersion = defaults.integer(forKey: migrationVersionKey)
         guard previousMigrationVersion < migrationVersion else { return }
@@ -483,19 +483,19 @@ final class SharedModelContainer {
 
         let context = container.viewContext
         let snapshots: [LegacyVoucherSnapshot]
-        if alreadyRanLegacyMigration {
+        do {
+            snapshots = try readLegacySwiftDataSnapshots(near: root)
+        } catch {
             snapshots = []
-        } else {
-            do {
-                snapshots = try readLegacySwiftDataSnapshots(near: root)
-            } catch {
-                snapshots = []
-                debugLog("⚠️ Lecture du store SwiftData historique impossible, réparation Core Data seule : \(error.localizedDescription)")
-            }
+            debugLog("⚠️ Lecture du store SwiftData historique impossible, réparation Core Data seule : \(error.localizedDescription)")
         }
 
         do {
             try context.performAndWait {
+                var createdCount = 0
+                var repairedCount = 0
+                var skippedDeletedCount = 0
+                var skippedAlreadyMigratedCount = 0
                 let deletedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherIDsKey) ?? [])
                 let deletedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? [])
                 var migratedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherIDsKey) ?? [])
@@ -526,14 +526,6 @@ final class SharedModelContainer {
                         vouchersByLegacyKey.removeValue(forKey: key)
                     }
                 }
-                if alreadyRanLegacyMigration {
-                    for snapshot in snapshots {
-                        migratedLegacyVoucherIDs.insert(snapshot.id.uuidString)
-                        if let key = Self.legacyVoucherKey(for: snapshot) {
-                            migratedLegacyVoucherKeys.insert(key)
-                        }
-                    }
-                }
                 if !snapshots.isEmpty {
                     let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).map(\.id))
                     var importedExpenseIDs = expenseIDs
@@ -553,6 +545,7 @@ final class SharedModelContainer {
                                     vouchersByLegacyKey.removeValue(forKey: key)
                                 }
                             }
+                            skippedDeletedCount += 1
                             continue
                         }
                         let codeType = Self.normalizedLegacyCodeType(snapshot.codeType)
@@ -560,12 +553,15 @@ final class SharedModelContainer {
                         if let existingVoucher = vouchersByID[snapshot.id]
                             ?? Self.legacyVoucherKey(for: snapshot).flatMap({ vouchersByLegacyKey[$0] }) {
                             voucher = existingVoucher
-                            Self.update(voucher, from: snapshot, codeType: codeType)
-                        } else if Self.isAlreadyMigratedLegacyVoucher(
+                            if Self.update(voucher, from: snapshot, codeType: codeType) {
+                                repairedCount += 1
+                            }
+                        } else if alreadyRanLegacyMigration || Self.isAlreadyMigratedLegacyVoucher(
                             snapshot,
                             migratedIDs: migratedLegacyVoucherIDs,
                             migratedKeys: migratedLegacyVoucherKeys
                         ) {
+                            skippedAlreadyMigratedCount += 1
                             continue
                         } else {
                             voucher = Voucher(
@@ -588,6 +584,7 @@ final class SharedModelContainer {
                             if let key = Self.legacyVoucherKey(for: snapshot) {
                                 vouchersByLegacyKey[key] = voucher
                             }
+                            createdCount += 1
                         }
                         migratedLegacyVoucherIDs.insert(snapshot.id.uuidString)
                         if let key = Self.legacyVoucherKey(for: snapshot) {
@@ -616,6 +613,7 @@ final class SharedModelContainer {
                         }
                     }
                 }
+                debugLog("🔁 Migration SwiftData v\(migrationVersion) (ancienne v\(previousMigrationVersion)) : snapshots=\(snapshots.count), créés=\(createdCount), réparés=\(repairedCount), supprimés ignorés=\(skippedDeletedCount), déjà migrés ignorés=\(skippedAlreadyMigratedCount)")
                 Self.consolidateDuplicateLocalVouchers(in: context)
                 Self.consolidatePersonalPreferences(in: context)
                 if context.hasChanges {
@@ -670,41 +668,54 @@ final class SharedModelContainer {
         return .barcode
     }
 
+    @discardableResult
     private static func update(
         _ voucher: Voucher,
         from snapshot: LegacyVoucherSnapshot,
         codeType: CodeType
-    ) {
+    ) -> Bool {
+        var didChange = false
         if voucher.storeName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             voucher.storeName = snapshot.storeName
+            didChange = true
         }
-        if voucher.amount == nil {
+        if voucher.amount == nil || ((voucher.amount ?? 0) <= 0 && (snapshot.amount ?? 0) > 0) {
             voucher.amount = snapshot.amount
+            didChange = true
         }
         if voucher.voucherNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             voucher.voucherNumber = snapshot.voucherNumber
+            didChange = true
         }
         if voucher.pinCode == nil {
             voucher.pinCode = snapshot.pinCode
+            didChange = true
         }
         if voucher.codeType == .barcode && codeType == .qrCode {
             voucher.codeType = .qrCode
             voucher.codeImageData = snapshot.codeImageData
+            didChange = true
         } else if voucher.codeImageData == nil {
             voucher.codeImageData = snapshot.codeImageData
+            didChange = snapshot.codeImageData != nil
         }
         if voucher.expirationDate == nil {
             voucher.expirationDate = snapshot.expirationDate
+            didChange = snapshot.expirationDate != nil
         }
         if voucher.pdfData == nil {
             voucher.pdfData = snapshot.pdfData
+            didChange = snapshot.pdfData != nil
         }
         if voucher.storeColor == "#007AFF" {
             voucher.storeColor = snapshot.storeColor
+            didChange = true
         }
         if voucher.textColor == "#FFFFFF" {
             voucher.textColor = snapshot.textColor
+            didChange = true
         }
+        return didChange
     }
 
     private static func legacyVoucherKey(for snapshot: LegacyVoucherSnapshot) -> String? {

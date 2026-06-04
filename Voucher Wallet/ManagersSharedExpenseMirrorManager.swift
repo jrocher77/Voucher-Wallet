@@ -49,16 +49,18 @@ extension VoucherSharingManager {
     }
 
     func mirrorSharedExpense(_ expense: Expense, for voucher: Voucher, isDeleted: Bool = false) {
-        guard voucher.isInActiveShare ||
-                share(for: voucher) != nil ||
-                Self.storedShareZone(for: voucher.id) != nil else {
-            return
-        }
         let payload = sharedExpenseMirrorPayload(for: expense, voucher: voucher, isDeleted: isDeleted)
         let voucherObjectID = voucher.objectID
+        let voucherID = voucher.id
+        let shouldAttemptImmediately = voucher.isInActiveShare || Self.storedShareZone(for: voucherID) != nil
 
         Task { @MainActor [weak self] in
-            await self?.saveSharedExpenseMirror(payload, voucherObjectID: voucherObjectID, attempt: 0)
+            guard let self else { return }
+            if !shouldAttemptImmediately {
+                guard let share = try? await self.share(for: voucherObjectID) else { return }
+                self.rememberShareZone(share.recordID.zoneID, for: voucherID)
+            }
+            await self.saveSharedExpenseMirror(payload, voucherObjectID: voucherObjectID, attempt: 0)
         }
     }
 
@@ -322,13 +324,14 @@ extension VoucherSharingManager {
     }
 
     private func shareZoneID(for voucher: Voucher) async -> CKRecordZone.ID? {
-        if let share = try? await share(for: voucher.objectID) {
-            return share.recordID.zoneID
-        }
         if let storedZoneID = Self.storedShareZone(for: voucher.id) {
             return storedZoneID
         }
-        return share(for: voucher)?.recordID.zoneID
+        if let share = try? await share(for: voucher.objectID) {
+            rememberShareZone(share.recordID.zoneID, for: voucher.id)
+            return share.recordID.zoneID
+        }
+        return nil
     }
 
     private func cloudDatabase(for voucher: Voucher) -> CKDatabase {

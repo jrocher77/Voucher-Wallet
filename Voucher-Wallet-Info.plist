@@ -21,7 +21,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>Voucher Wallet</string>
+			<string>Mes bons d'achat</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>voucherwallet</string>

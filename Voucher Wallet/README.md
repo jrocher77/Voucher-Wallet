@@ -1,4 +1,4 @@
-# 🎫 Voucher Wallet
+# Mes bons d'achat
 
 Application iOS pour gérer et organiser vos bons d'achat numériquement, avec support des codes-barres et import PDF intelligent.
 
@@ -351,7 +351,7 @@ NavigationLink {
 
 #### Test 4 : Réglages iOS
 1. Créer quelques bons
-2. Ouvrir Réglages iOS → Voucher Wallet
+2. Ouvrir Réglages iOS → Mes bons d'achat
 3. ✅ Vérifier les statistiques
 4. Activer "Réinitialiser"
 5. Retourner dans l'app
@@ -494,7 +494,7 @@ Ce projet est un exemple éducatif.
 
 **Développé par** : JEREMY  
 **Date de création** : Avril 2026  
-**Version actuelle** : 1.1.1  
+**Version actuelle** : 2.0.2
 **Statut** : ✅ Production Ready
 
 ---

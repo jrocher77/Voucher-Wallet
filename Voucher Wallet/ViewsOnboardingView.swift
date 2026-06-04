@@ -430,7 +430,7 @@ private struct OnboardingPage: Identifiable {
 
     static let all = [
         OnboardingPage(
-            title: "Bienvenue dans Voucher Wallet",
+            title: "Bienvenue dans Mes bons d'achat",
             message: "Gardez vos bons d'achat au même endroit, prêts à être retrouvés quand vous en avez besoin.",
             kind: .wallet
         ),
@@ -441,7 +441,7 @@ private struct OnboardingPage: Identifiable {
         ),
         OnboardingPage(
             title: "Laissez l'app analyser",
-            message: "Voucher Wallet détecte les informations utiles et préremplit votre bon pour accélérer l'ajout.",
+            message: "L'app Mes bons d'achat détecte les informations utiles et préremplit votre bon pour accélérer l'ajout.",
             kind: .scan
         ),
         OnboardingPage(

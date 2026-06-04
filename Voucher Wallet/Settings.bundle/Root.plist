@@ -13,7 +13,7 @@
             <key>Title</key>
             <string>Apprentissage automatique</string>
             <key>FooterText</key>
-            <string>L'application apprend automatiquement vos préférences pour améliorer la détection des enseignes et des couleurs associées.</string>
+            <string>"Mes bons d'achat" apprend automatiquement vos préférences pour améliorer la détection des enseignes et des couleurs associées.</string>
         </dict>
         
         <!-- Lien vers la page Statistiques -->
@@ -33,7 +33,7 @@
             <key>Title</key>
             <string>Démonstration</string>
             <key>FooterText</key>
-            <string>Activez cette option pour revoir l'écran de présentation au prochain lancement de l'app.</string>
+            <string>Activez cette option pour revoir l'écran de présentation au prochain lancement de "Mes bons d'achat".</string>
         </dict>
         
         <!-- Toggle pour relancer l'onboarding -->
@@ -63,7 +63,7 @@
             <key>Type</key>
             <string>PSTextFieldSpecifier</string>
             <key>Title</key>
-            <string>Nom d'affichage</string>
+            <string>Nom d'affichage :</string>
             <key>Key</key>
             <string>sharedExpenseDisplayName</string>
             <key>DefaultValue</key>
@@ -113,7 +113,7 @@
             <key>Key</key>
             <string>version_preference</string>
             <key>DefaultValue</key>
-            <string>1.1.1</string>
+            <string>2.0.2</string>
         </dict>
     </array>
 </dict>

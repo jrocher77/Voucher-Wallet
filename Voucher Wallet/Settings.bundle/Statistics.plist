@@ -93,7 +93,7 @@
             <key>Title</key>
             <string>Gestion des données</string>
             <key>FooterText</key>
-            <string>Activez cette option pour réinitialiser toutes les données d'apprentissage. Une confirmation vous sera demandée lors de la prochaine ouverture de l'app. Vos bons ne seront pas affectés.</string>
+            <string>Activez cette option pour réinitialiser toutes les données d'apprentissage. Une confirmation vous sera demandée lors de la prochaine ouverture de "Mes bons d'achat". Vos bons ne seront pas affectés.</string>
         </dict>
         
         <!-- Toggle pour demander la réinitialisation -->

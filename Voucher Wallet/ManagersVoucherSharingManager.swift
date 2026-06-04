@@ -305,7 +305,7 @@ final class VoucherSharingManager {
             lastErrorMessage = """
             Impossible d'accepter ce partage iCloud pour le moment.
 
-            Le stockage iCloud partagé local doit être réinitialisé. Fermez puis relancez Voucher Wallet, puis demandez à votre ami de renvoyer l'invitation.
+            Le stockage iCloud partagé local doit être réinitialisé. Fermez puis relancez Mes bons d'achat, puis demandez à votre ami de renvoyer l'invitation.
 
             Vérifiez aussi que vous utilisez tous les deux la même version de l'app, par exemple toutes les deux via TestFlight/App Store ou toutes les deux via Xcode.
             """
@@ -847,7 +847,7 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
         }
 
         func itemType(for csc: UICloudSharingController) -> String? {
-            "Bon d'achat Voucher Wallet"
+            "Bon d'achat de Mes bons d'achat"
         }
 
         func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {

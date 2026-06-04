@@ -48,20 +48,6 @@ extension VoucherSharingManager {
         [0.7, 2.0, 5.0, 10.0]
     }
 
-    private var locallyDeletedSharedExpenseDefaultsKey: String {
-        "locallyDeletedSharedExpenseIDs"
-    }
-
-    @discardableResult
-    func purgeLocallyDeletedSharedExpenses(for vouchers: [Voucher]) -> Bool {
-        let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
-        guard defaults.stringArray(forKey: locallyDeletedSharedExpenseDefaultsKey)?.isEmpty == false else {
-            return false
-        }
-        defaults.removeObject(forKey: locallyDeletedSharedExpenseDefaultsKey)
-        return false
-    }
-
     func mirrorSharedExpense(_ expense: Expense, for voucher: Voucher, isDeleted: Bool = false) {
         guard voucher.isInActiveShare else { return }
         let payload = sharedExpenseMirrorPayload(for: expense, voucher: voucher, isDeleted: isDeleted)

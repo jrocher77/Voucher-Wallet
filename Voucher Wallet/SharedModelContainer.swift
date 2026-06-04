@@ -5,6 +5,7 @@
 
 import CloudKit
 @preconcurrency import CoreData
+import CryptoKit
 import Foundation
 
 /// Conteneur Core Data/CloudKit commun à l'application et au widget.
@@ -14,11 +15,11 @@ final class SharedModelContainer {
     nonisolated static let privateConfigurationName = "Private"
     nonisolated static let sharedConfigurationName = "Shared"
     nonisolated static let cloudSyncStatusNotificationName = Notification.Name("voucherCloudSyncStatusDidChange")
-    private static let resetSharedStoreOnNextLaunchKey = "resetSharedCloudStoreOnNextLaunch"
-    private static let deletedLegacyVoucherIDsKey = "deletedLegacyVoucherIDs"
-    private static let deletedLegacyVoucherKeysKey = "deletedLegacyVoucherKeys"
-    private static let migratedLegacyVoucherIDsKey = "migratedLegacyVoucherIDs"
-    private static let migratedLegacyVoucherKeysKey = "migratedLegacyVoucherKeys"
+    nonisolated private static let resetSharedStoreOnNextLaunchKey = "resetSharedCloudStoreOnNextLaunch"
+    nonisolated private static let deletedLegacyVoucherIDsKey = "deletedLegacyVoucherIDs"
+    nonisolated private static let deletedLegacyVoucherKeysKey = "deletedLegacyVoucherKeys"
+    nonisolated private static let migratedLegacyVoucherIDsKey = "migratedLegacyVoucherIDs"
+    nonisolated private static let migratedLegacyVoucherKeysKey = "migratedLegacyVoucherKeys"
     static weak var active: SharedModelContainer?
 
     let container: NSPersistentCloudKitContainer
@@ -69,6 +70,7 @@ final class SharedModelContainer {
         container.viewContext.automaticallyMergesChangesFromParent = true
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         container.viewContext.transactionAuthor = "VoucherWalletApp"
+        Self.migrateLegacyVoucherStoredKeysIfNeeded()
         cloudSyncCoordinator = CloudSyncCoordinator(persistence: self)
         NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,
@@ -131,8 +133,10 @@ final class SharedModelContainer {
         deletedIDs.insert(voucher.id.uuidString)
         defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
 
-        if let key = deletedLegacyVoucherKey(for: voucher.voucherNumber) {
-            var deletedKeys = Set(defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? [])
+        if let key = legacyVoucherPrivacyKey(for: voucher.voucherNumber) {
+            var deletedKeys = legacyVoucherPrivacyKeys(
+                from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
+            )
             deletedKeys.insert(key)
             defaults.set(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
         }
@@ -145,9 +149,12 @@ final class SharedModelContainer {
         deletedIDs.remove(voucher.id.uuidString)
         defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
 
-        if let key = deletedLegacyVoucherKey(for: voucher.voucherNumber) {
-            var deletedKeys = Set(defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? [])
-            deletedKeys.remove(key)
+        var deletedKeys = legacyVoucherPrivacyKeys(
+            from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
+        )
+        let lookupKeys = legacyVoucherStorageLookupKeys(for: voucher.voucherNumber)
+        if !lookupKeys.isEmpty {
+            deletedKeys.subtract(lookupKeys)
             defaults.set(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
         }
     }
@@ -155,10 +162,12 @@ final class SharedModelContainer {
     static func isDeletedLegacyVoucher(_ voucher: Voucher) -> Bool {
         let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
         let deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
-        let deletedKeys = Set(defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? [])
+        let deletedKeys = legacyVoucherPrivacyKeys(
+            from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
+        )
 
         return deletedIDs.contains(voucher.id.uuidString) ||
-            deletedLegacyVoucherKey(for: voucher.voucherNumber).map(deletedKeys.contains) == true
+            !legacyVoucherStorageLookupKeys(for: voucher.voucherNumber).isDisjoint(with: deletedKeys)
     }
 
     @discardableResult
@@ -187,13 +196,55 @@ final class SharedModelContainer {
         }
     }
 
-    private static func deletedLegacyVoucherKey(for voucherNumber: String) -> String? {
+    nonisolated private static func migrateLegacyVoucherStoredKeysIfNeeded() {
+        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+
+        for key in [deletedLegacyVoucherKeysKey, migratedLegacyVoucherKeysKey] {
+            let storedValues = defaults.stringArray(forKey: key) ?? []
+            let privacyValues = legacyVoucherPrivacyKeys(from: storedValues)
+            if Set(storedValues) != privacyValues {
+                defaults.set(Array(privacyValues), forKey: key)
+            }
+        }
+    }
+
+    nonisolated private static func normalizedVoucherNumberKey(_ voucherNumber: String) -> String? {
         let normalized = voucherNumber
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "-", with: "")
             .uppercased()
         return normalized.isEmpty ? nil : normalized
+    }
+
+    nonisolated private static func legacyVoucherPrivacyKey(for voucherNumber: String) -> String? {
+        normalizedVoucherNumberKey(voucherNumber).map(legacyVoucherPrivacyKey(forNormalizedKey:))
+    }
+
+    nonisolated private static func legacyVoucherPrivacyKey(forNormalizedKey normalizedKey: String) -> String {
+        let scopedValue = "VoucherWallet.LegacyVoucherKey.v1.\(normalizedKey)"
+        let digest = SHA256.hash(data: Data(scopedValue.utf8))
+        let hash = digest.map { String(format: "%02x", $0) }.joined()
+        return "sha256:\(hash)"
+    }
+
+    nonisolated private static func legacyVoucherStorageLookupKeys(for voucherNumber: String) -> Set<String> {
+        guard let normalizedKey = normalizedVoucherNumberKey(voucherNumber) else { return [] }
+        return [
+            normalizedKey,
+            legacyVoucherPrivacyKey(forNormalizedKey: normalizedKey)
+        ]
+    }
+
+    nonisolated private static func legacyVoucherPrivacyKeys(from storedValues: [String]) -> Set<String> {
+        Set(storedValues.compactMap { value in
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            if trimmed.hasPrefix("sha256:") {
+                return trimmed
+            }
+            return legacyVoucherPrivacyKey(forNormalizedKey: trimmed)
+        })
     }
 
     func markSharedStoreForResetOnNextLaunch(reason: String) {
@@ -322,6 +373,10 @@ final class SharedModelContainer {
         for description in [privateDescription, sharedDescription] {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+            description.setOption(
+                FileProtectionType.complete.rawValue as NSString,
+                forKey: NSPersistentStoreFileProtectionKey
+            )
             description.shouldMigrateStoreAutomatically = true
             description.shouldInferMappingModelAutomatically = true
         }
@@ -497,9 +552,13 @@ final class SharedModelContainer {
                 var skippedDeletedCount = 0
                 var skippedAlreadyMigratedCount = 0
                 let deletedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherIDsKey) ?? [])
-                let deletedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? [])
+                let deletedLegacyVoucherKeys = Self.legacyVoucherPrivacyKeys(
+                    from: defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? []
+                )
                 var migratedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherIDsKey) ?? [])
-                var migratedLegacyVoucherKeys = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherKeysKey) ?? [])
+                var migratedLegacyVoucherKeys = Self.legacyVoucherPrivacyKeys(
+                    from: defaults.stringArray(forKey: Self.migratedLegacyVoucherKeysKey) ?? []
+                )
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
                     existingVouchers.map { ($0.id, $0) },
@@ -587,7 +646,7 @@ final class SharedModelContainer {
                             createdCount += 1
                         }
                         migratedLegacyVoucherIDs.insert(snapshot.id.uuidString)
-                        if let key = Self.legacyVoucherKey(for: snapshot) {
+                        if let key = Self.legacyVoucherPrivacyKey(for: snapshot.voucherNumber) {
                             migratedLegacyVoucherKeys.insert(key)
                         }
 
@@ -728,7 +787,7 @@ final class SharedModelContainer {
         deletedKeys: Set<String>
     ) -> Bool {
         deletedIDs.contains(snapshot.id.uuidString) ||
-            legacyVoucherKey(for: snapshot).map(deletedKeys.contains) == true
+            !legacyVoucherStorageLookupKeys(for: snapshot.voucherNumber).isDisjoint(with: deletedKeys)
     }
 
     private static func isDeletedLegacyVoucher(
@@ -737,7 +796,7 @@ final class SharedModelContainer {
         deletedKeys: Set<String>
     ) -> Bool {
         deletedIDs.contains(voucher.id.uuidString) ||
-            legacyVoucherKey(for: voucher).map(deletedKeys.contains) == true
+            !legacyVoucherStorageLookupKeys(for: voucher.voucherNumber).isDisjoint(with: deletedKeys)
     }
 
     private static func isAlreadyMigratedLegacyVoucher(
@@ -746,7 +805,7 @@ final class SharedModelContainer {
         migratedKeys: Set<String>
     ) -> Bool {
         migratedIDs.contains(snapshot.id.uuidString) ||
-            legacyVoucherKey(for: snapshot).map(migratedKeys.contains) == true
+            !legacyVoucherStorageLookupKeys(for: snapshot.voucherNumber).isDisjoint(with: migratedKeys)
     }
 
     private static func legacyVoucherKey(for voucher: Voucher) -> String? {
@@ -754,12 +813,7 @@ final class SharedModelContainer {
     }
 
     private static func legacyVoucherKey(voucherNumber: String) -> String? {
-        let normalized = voucherNumber
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: " ", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .uppercased()
-        return normalized.isEmpty ? nil : normalized
+        normalizedVoucherNumberKey(voucherNumber)
     }
 
     private static func preferredMigrationVoucher(_ lhs: Voucher, _ rhs: Voucher) -> Voucher {
@@ -975,8 +1029,6 @@ final class CloudSyncCoordinator: @unchecked Sendable {
         backgroundContext.transactionAuthor = "VoucherWalletHistoryMerge"
         backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
 
-        cloudSyncLog("Lecture historique persistant démarrée (\(reason))")
-
         backgroundContext.perform { [weak self] in
             guard let coordinator = self else { return }
             do {
@@ -1035,7 +1087,6 @@ final class CloudSyncCoordinator: @unchecked Sendable {
         }
 
         guard mergeResult.transactionCount > 0 else {
-            cloudSyncLog("Aucune transaction distante à fusionner (\(reason))")
             return
         }
 

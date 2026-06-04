@@ -465,11 +465,10 @@ struct ContentView: View {
             refreshVoucherGraph(voucher)
         }
         modelContext.processPendingChanges()
-        let purgedDeletedExpenses = sharingManager.purgeLocallyDeletedSharedExpenses(for: visibleVouchers)
         sharingManager.reconcileSharingStates()
         reloadReceivedSharedVouchers(reason: reason)
         favoriteRevision += 1
-        if purgedDeletedLegacyVouchers || purgedDeletedExpenses {
+        if purgedDeletedLegacyVouchers {
             WidgetReloader.reloadAllWidgets()
         }
     }

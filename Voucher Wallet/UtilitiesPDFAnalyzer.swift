@@ -162,7 +162,7 @@ class PDFAnalyzer {
             // Si on a détecté un bon complet sur cette page, l'ajouter
             if let voucher = pageResult.detectedVoucher {
                 result.detectedVouchers.append(voucher)
-                debugLog("✅ Bon détecté sur la page \(currentPage): \(voucher.voucherNumber)")
+                debugLog("✅ Bon détecté sur la page \(currentPage)")
             }
         }
         
@@ -177,21 +177,19 @@ class PDFAnalyzer {
             // Analyser le texte extrait pour trouver des patterns globaux
             let allText = result.detectedText.joined(separator: " ")
             
-            debugLog("📄 Texte extrait du PDF:")
-            debugLog(allText)
-            debugLog("---")
+            debugLog("📄 Texte OCR extrait du PDF (\(allText.count) caractère(s))")
             
             // Extraire les informations des codes-barres détectés
             for barcode in result.barcodes {
                 if let payload = barcode.payloadStringValue {
-                    debugLog("🔢 Code-barres détecté: \(payload)")
+                    debugLog("🔢 Code-barres détecté")
                     result.possibleVoucherNumbers.append(payload)
                 }
             }
             
             for qrCode in result.qrCodes {
                 if let payload = qrCode.payloadStringValue {
-                    debugLog("📱 QR Code détecté: \(payload)")
+                    debugLog("📱 QR Code détecté")
                     result.possibleVoucherNumbers.append(payload)
                 }
             }
@@ -207,7 +205,7 @@ class PDFAnalyzer {
             result.storeNameConfidence = storeDetection.confidence
             result.detectionMethod = storeDetection.method
             
-            debugLog("✅ Numéros détectés: \(result.possibleVoucherNumbers)")
+            debugLog("✅ \(result.possibleVoucherNumbers.count) numéro(s) candidat(s) détecté(s)")
             debugLog("🏪 Enseigne détectée: \(result.detectedStoreName ?? "Aucune") (confiance: \(String(format: "%.0f%%", result.storeNameConfidence * 100)))")
         } else {
             debugLog("\n🎉 \(result.detectedVouchers.count) bon(s) détecté(s) au total")
@@ -448,7 +446,7 @@ class PDFAnalyzer {
         }
         
         let uniqueNumbers = Array(Set(numbers))
-        debugLog("🔢 Numéros extraits du texte: \(uniqueNumbers)")
+        debugLog("🔢 \(uniqueNumbers.count) numéro(s) extrait(s) du texte")
         return uniqueNumbers
     }
     
@@ -469,7 +467,7 @@ class PDFAnalyzer {
 
                 let pinCode = nsText.substring(with: range)
                 pins.append(pinCode)
-                debugLog("📍 Code PIN détecté (pattern '\(label)'): \(pinCode)")
+                debugLog("📍 Code PIN détecté (pattern '\(label)')")
             }
         }
 
@@ -517,7 +515,7 @@ class PDFAnalyzer {
 
         let uniquePins = Array(Set(pins))
         if !uniquePins.isEmpty {
-            debugLog("🔐 Codes PIN extraits: \(uniquePins)")
+            debugLog("🔐 \(uniquePins.count) code(s) PIN extrait(s)")
         }
         
         return uniquePins

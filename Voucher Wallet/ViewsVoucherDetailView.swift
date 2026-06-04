@@ -165,16 +165,6 @@ struct VoucherDetailView: View {
                 }
             }
             
-            /*
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: toggleFavorite) {
-                    Image(systemName: isFavorite ? "star.fill" : "star")
-                        .foregroundStyle(isFavorite ? .yellow : .primary)
-                        .font(.title3)
-                        .symbolEffect(.bounce, value: voucher.isFavorite)
-                }
-            }
-            */
         }
         .alert("Supprimer ce bon ?", isPresented: $showingDeleteAlert) {
             Button("Annuler", role: .cancel) { }
@@ -543,7 +533,7 @@ struct VoucherDetailView: View {
                             note: expense.note,
                             authorDisplayName: expense.authorDisplayName,
                             amount: expense.amount,
-                            canModify: canModify(expense)
+                            canModify: true
                         ) {
                             expenseToPresent = .edit(expense)
                         }
@@ -584,12 +574,7 @@ struct VoucherDetailView: View {
             modelContext.refresh(expense, mergeChanges: false)
         }
         modelContext.refresh(voucher, mergeChanges: false)
-        let purgedDeletedExpenses = sharingManager.purgeLocallyDeletedSharedExpenses(for: [voucher])
         sharingManager.reconcileSharingStates()
-        if purgedDeletedExpenses {
-            expenseRevision += 1
-            voucherRevision += 1
-        }
         if reloadExpenses {
             expenseRevision += 1
         }
@@ -643,10 +628,6 @@ struct VoucherDetailView: View {
                 debugLog("❌ Erreur lors de la suppression du bon: \(error)")
             }
         }
-    }
-
-    private func canModify(_ expense: Expense) -> Bool {
-        true
     }
 
     private func toggleFavorite() {

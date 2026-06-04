@@ -13,7 +13,7 @@ struct BarcodeGenerator {
     
     /// Génère une image de QR code à partir d'une chaîne
     static func generateQRCode(from string: String) -> UIImage? {
-        debugLog("📱 Génération QR code pour: \(string)")
+        debugLog("📱 Génération QR code")
         
         let context = CIContext()
         let filter = CIFilter.qrCodeGenerator()
@@ -54,10 +54,10 @@ struct BarcodeGenerator {
         let cleanString = string.replacingOccurrences(of: " ", with: "")
                                 .replacingOccurrences(of: "-", with: "")
         
-        debugLog("🔢 Génération code-barres pour: \(cleanString)")
+        debugLog("🔢 Génération code-barres")
         
         guard let data = cleanString.data(using: .ascii) else {
-            debugLog("❌ Impossible de convertir en ASCII: \(cleanString)")
+            debugLog("❌ Impossible de convertir le code-barres en ASCII")
             return nil
         }
         

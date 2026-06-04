@@ -41,7 +41,7 @@ struct Voucher_WalletApp: App {
                 .environment(sharingManager)
                 .environment(\.managedObjectContext, persistence.container.viewContext)
                 .onOpenURL { url in
-                    debugLog("🔵 App received URL: \(url)")
+                    debugLog("🔵 App received URL: \(url.scheme ?? "scheme inconnu")")
                     if sharingManager.acceptShareURLIfPossible(url) {
                         return
                     }
@@ -49,7 +49,7 @@ struct Voucher_WalletApp: App {
                 }
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
                     guard let url = activity.webpageURL else { return }
-                    debugLog("🔵 App received user activity URL: \(url)")
+                    debugLog("🔵 App received user activity URL: \(url.scheme ?? "scheme inconnu")")
                     if sharingManager.acceptShareURLIfPossible(url) {
                         return
                     }

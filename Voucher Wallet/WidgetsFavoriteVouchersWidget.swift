@@ -29,13 +29,13 @@ struct OpenVoucherIntent: AppIntent {
     }
     
     func perform() async throws -> some IntentResult {
-        debugLog("🎯 OpenVoucherIntent appelé pour: \(voucherID)")
+        debugLog("🎯 OpenVoucherIntent appelé")
         
         // Stocker l'ID dans UserDefaults partagé
         if let userDefaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) {
             userDefaults.set(voucherID, forKey: "selectedVoucherID")
             userDefaults.synchronize()
-            debugLog("✅ Voucher ID stocké: \(voucherID)")
+            debugLog("✅ Voucher ID stocké dans l'App Group")
         }
         
         return .result()
@@ -203,10 +203,6 @@ struct FavoriteVouchersProvider: TimelineProvider {
             }
             
             debugLog("📊 Widget: Retourne \(snapshots.count) snapshots")
-            for snapshot in snapshots {
-                debugLog("   - \(snapshot.storeName): \(snapshot.remainingBalance)€")
-            }
-            
             return snapshots
         } catch {
             debugLog("❌ Erreur lors de la récupération des vouchers favoris: \(error)")

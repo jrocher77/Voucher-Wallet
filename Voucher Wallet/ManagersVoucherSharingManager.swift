@@ -37,7 +37,6 @@ final class VoucherSharingManager {
     let persistence: SharedModelContainer
     var lastErrorMessage: String?
     var sharingStatusMessage: String?
-    private var missingReceivedShareDetectedAt: [NSManagedObjectID: Date] = [:]
     private var pendingParticipantResolutionObjectIDs = Set<NSManagedObjectID>()
     private var isRemovingReceivedShare = false
     private var receivedShareRemovalQueue: [ReceivedShareRemoval] = []
@@ -157,6 +156,28 @@ final class VoucherSharingManager {
         }
     }
 
+    nonisolated static func isCloudKitShareURL(_ url: URL) -> Bool {
+        if let scheme = url.scheme?.lowercased(),
+           scheme == "ckshare" || scheme == "cloudkit-share" {
+            return true
+        }
+
+        if let host = url.host?.lowercased(),
+           host == "icloud.com" || host.hasSuffix(".icloud.com") {
+            let shareHint = [
+                url.path,
+                url.query,
+                url.fragment
+            ]
+            .compactMap { $0?.lowercased() }
+            .joined(separator: " ")
+
+            return shareHint.contains("share") || shareHint.contains("ckshare")
+        }
+
+        return url.absoluteString.lowercased().contains("ckshare")
+    }
+
     func share(for voucher: Voucher) -> CKShare? {
         guard !voucher.objectID.isTemporaryID else { return nil }
         let share = try? persistence.container.fetchShares(matching: [voucher.objectID])[voucher.objectID]
@@ -256,22 +277,8 @@ final class VoucherSharingManager {
         WidgetReloader.reloadAllWidgets()
     }
 
-    func reconcileReceivedSharingStates() {
-        // Ne jamais supprimer localement un bon reçu parce que son CKShare
-        // n'est pas encore visible. Pendant l'acceptation, CloudKit peut
-        // importer l'objet avant d'exposer les métadonnées du partage.
-        missingReceivedShareDetectedAt.removeAll()
-    }
-
-    func purgeReceivedVoucherIfShareIsStillMissing(_ voucher: Voucher) {
-        // La révocation d'un partage reçu doit être propagée par CloudKit.
-        // Une purge locale basée sur l'absence temporaire de CKShare peut
-        // supprimer un partage fraîchement accepté avant son affichage.
-    }
-
     func reconcileSharingStates() {
         reconcileOwnedSharingStates()
-        reconcileReceivedSharingStates()
     }
 
     func accept(_ metadata: CKShare.Metadata) {
@@ -322,8 +329,7 @@ final class VoucherSharingManager {
     }
 
     func acceptShareURLIfPossible(_ url: URL) -> Bool {
-        let value = url.absoluteString.lowercased()
-        guard value.contains("icloud") || value.contains("ckshare") || value.contains("share") else {
+        guard Self.isCloudKitShareURL(url) else {
             return false
         }
 
@@ -482,22 +488,22 @@ final class VoucherSharingManager {
                     }
 
                     persistentContainer.share([voucher] + voucher.activeExpensesList, to: nil) { _, share, cloudContainer, error in
-                    if let error {
-                        debugLog("Erreur lors de la préparation du partage CloudKit: \(error.localizedDescription)")
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    guard let share else {
-                        debugLog("Erreur lors de la préparation du partage CloudKit: CKShare absent")
-                        continuation.resume(throwing: CocoaError(.fileWriteUnknown))
-                        return
-                    }
+                        if let error {
+                            debugLog("Erreur lors de la préparation du partage CloudKit: \(error.localizedDescription)")
+                            continuation.resume(throwing: error)
+                            return
+                        }
+                        guard let share else {
+                            debugLog("Erreur lors de la préparation du partage CloudKit: CKShare absent")
+                            continuation.resume(throwing: CocoaError(.fileWriteUnknown))
+                            return
+                        }
                         share[CKShare.SystemFieldKey.title] = title as CKRecordValue
                         share.publicPermission = .none
                         Self.rememberShareZone(share.recordID.zoneID, for: voucher.id)
                         let resolvedContainer = cloudContainer ?? CKContainer(identifier: cloudContainerIdentifier)
-                    continuation.resume(returning: (share, resolvedContainer))
-                }
+                        continuation.resume(returning: (share, resolvedContainer))
+                    }
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -972,17 +978,12 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
 
     @MainActor
     static func acceptShareURLIfPossible(_ url: URL) -> Bool {
-        guard isShareURL(url) else { return false }
+        guard VoucherSharingManager.isCloudKitShareURL(url) else { return false }
         guard let activeSharingManager else {
             pendingShareURLs.append(url)
             return true
         }
         return activeSharingManager.acceptShareURLIfPossible(url)
-    }
-
-    private static func isShareURL(_ url: URL) -> Bool {
-        let value = url.absoluteString.lowercased()
-        return value.contains("icloud") || value.contains("ckshare") || value.contains("share")
     }
 
     func application(
@@ -1028,7 +1029,7 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
         Task { @MainActor in
             _ = Self.acceptShareURLIfPossible(url)
         }
-        return Self.isShareURL(url)
+        return VoucherSharingManager.isCloudKitShareURL(url)
     }
 
     func application(
@@ -1043,7 +1044,7 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
         Task { @MainActor in
             _ = Self.acceptShareURLIfPossible(url)
         }
-        return Self.isShareURL(url)
+        return VoucherSharingManager.isCloudKitShareURL(url)
     }
 
     func application(
@@ -1113,12 +1114,12 @@ final class CloudSharingAppDelegate: NSObject, UIApplicationDelegate {
         reason: String,
         manager: VoucherSharingManager?
     ) async {
-        if let notification = CKNotification(fromRemoteNotificationDictionary: userInfo) {
-            debugLog("Notification CloudKit reçue (\(reason)): type=\(notification.notificationType.rawValue), subscription=\(notification.subscriptionID ?? "inconnue")")
-        } else {
+        guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo) else {
             debugLog("Notification distante reçue sans payload CloudKit (\(reason))")
+            return
         }
 
+        debugLog("Notification CloudKit reçue (\(reason)): type=\(notification.notificationType.rawValue), subscription=\(notification.subscriptionID ?? "inconnue")")
         guard let manager else { return }
         manager.persistence.requestCloudRefresh(minimumInterval: 0)
         manager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0, 6.0])

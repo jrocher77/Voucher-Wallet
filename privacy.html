@@ -223,12 +223,12 @@
       <section aria-labelledby="use-title">
         <h2 id="use-title">Utilisation des informations</h2>
         <p>Ces informations servent uniquement à fournir les fonctions de l'application : afficher vos bons, calculer les soldes, détecter les doublons, extraire des informations depuis un PDF, mémoriser vos préférences de couleur, afficher vos favoris dans le widget iOS et partager volontairement un bon avec des personnes de confiance.</p>
-        <p>L'analyse des PDF est effectuée avec les frameworks Apple disponibles sur l'appareil, notamment PDFKit et Vision. L'app Mes bons d'achat n'envoie pas vos PDF vers un serveur externe pour les analyser.</p>
+        <p>L'analyse des PDF est effectuée avec les frameworks Apple disponibles sur l'appareil, notamment PDFKit et Vision. L'app Mes bons d'achat n'envoie pas vos PDF vers un serveur externe pour les analyser. Les PDF trop volumineux peuvent être refusés afin d'éviter un chargement excessif en mémoire.</p>
       </section>
 
       <section aria-labelledby="storage-title">
         <h2 id="storage-title">Stockage et partage</h2>
-        <p>Les données de l'application sont stockées avec les mécanismes de persistance d'iOS et synchronisées, lorsque iCloud est disponible sur l'appareil, dans le conteneur CloudKit associé à Mes bons d'achat. Cette synchronisation permet de récupérer vos bons sur vos appareils connectés au même compte iCloud.</p>
+        <p>Les données de l'application sont stockées avec les mécanismes de persistance d'iOS, avec la protection fichier locale disponible sur l'appareil, et synchronisées, lorsque iCloud est disponible, dans le conteneur CloudKit associé à Mes bons d'achat. Cette synchronisation permet de récupérer vos bons sur vos appareils connectés au même compte iCloud.</p>
         <p>Lorsque vous choisissez de partager un bon via iCloud, ses informations utilisables comme moyen de paiement, notamment le numéro, le code PIN, le code-barres ou QR code et le PDF éventuel, deviennent accessibles aux participants que vous invitez. Les dépenses saisies pendant le partage peuvent afficher le nom d'affichage de leur auteur aux autres participants.</p>
         <p>Certaines préférences et informations nécessaires au widget peuvent être conservées dans UserDefaults et dans l'App Group de l'application, afin que l'application principale et le widget puissent afficher les mêmes favoris.</p>
         <p>L'app Mes bons d'achat ne transmet pas vos informations personnelles à des tiers et n'utilise pas de service publicitaire ou d'analyse comportementale.</p>

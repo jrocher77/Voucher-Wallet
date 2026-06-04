@@ -44,13 +44,9 @@ struct AddExpenseView: View {
         self.onVoucherDeleted = onVoucherDeleted
         self.onExpenseSaved = onExpenseSaved
         
-        // Debug
-        if let expense = expense {
+        if expense != nil {
             debugLog("📝 AddExpenseView init en mode ÉDITION")
-            debugLog("   • ID de la dépense: \(expense.id)")
-            debugLog("   • Montant actuel: \(expense.amount)")
-            debugLog("   • Date actuelle: \(expense.date)")
-            debugLog("   • Note actuelle: \(expense.note ?? "nil")")
+            debugLog("   • Dépense existante chargée")
         } else {
             debugLog("➕ AddExpenseView init en mode CRÉATION")
         }
@@ -229,14 +225,12 @@ struct AddExpenseView: View {
         let savedExpense: Expense
         if let existing = existingExpense {
             // Édition
-            debugLog("🔄 Modification de la dépense existante (ID: \(existing.id))")
+            debugLog("🔄 Modification de la dépense existante")
             existing.amount = expenseAmount
             existing.date = date
             existing.note = note.isEmpty ? nil : note
             savedExpense = existing
-            debugLog("   ✓ Montant mis à jour: \(expenseAmount)")
-            debugLog("   ✓ Date mise à jour: \(date)")
-            debugLog("   ✓ Note mise à jour: \(note.isEmpty ? "nil" : note)")
+            debugLog("   ✓ Dépense mise à jour")
         } else {
             // Création
             debugLog("➕ Création d'une nouvelle dépense")
@@ -253,7 +247,7 @@ struct AddExpenseView: View {
             SharedModelContainer.assign(expense, toStoreOf: voucher)
             expense.voucher = voucher
             savedExpense = expense
-            debugLog("   ✓ Nouvelle dépense créée (ID: \(expense.id))")
+            debugLog("   ✓ Nouvelle dépense créée")
         }
         
         do {

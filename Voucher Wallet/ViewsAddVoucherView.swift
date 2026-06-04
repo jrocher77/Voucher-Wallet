@@ -304,14 +304,8 @@ struct AddVoucherView: View {
     private func handleFileImport(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            
-            // Accéder au fichier de manière sécurisée
-            guard url.startAccessingSecurityScopedResource() else {
-                throw PDFAnalyzerError.invalidPDF
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
-            
-            let data = try Data(contentsOf: url)
+
+            let data = try PDFImportSecurity.readPDFData(from: url)
             selectedPDFData = data
             
             // Analyser le PDF via le ViewModel

@@ -43,6 +43,8 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 
 ### 📊 Protection et Sécurité
 - **Protection contre les doublons** : Détection automatique basée sur le numéro de bon
+- **Import PDF borné** : Les PDF importés sont lus via l'accès sécurisé iOS et refusés au-delà de 25 Mo
+- **Protection fichier iOS** : Les stores Core Data locaux demandent la protection complète des fichiers pour les données sensibles
 - **Avertissements visuels** : Indicateurs en temps réel lors de la saisie
 - **Filtrage intelligent** : Import multiple avec exclusion automatique des doublons
 - **Alertes récapitulatives** : Rapport détaillé des bons ignorés
@@ -125,6 +127,7 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
 - **Core Data + CloudKit** : `NSPersistentCloudKitContainer` utilise un store privé et un store partagé afin de prendre en charge `CKShare`
 - **Miroir des dépenses partagées** : `ManagersSharedExpenseMirrorManager.swift` écrit et relit des records CloudKit `SharedExpenseMirror` pour rendre le pull-to-refresh fiable quand l'import Core Data est différé
 - **App Group** : Partage des stores Core Data locaux entre l'application et le widget
+- **Protection locale** : Les stores SQLite Core Data utilisent `NSPersistentStoreFileProtectionKey` avec la protection fichier complète d'iOS
 - **Préférences personnelles** : favoris et ordre sont conservés en données privées, séparées du bon partagé
 - **UserDefaults** : Préférences d'apprentissage
   - `learnedStoreColors` : Dictionnaire `[String: String]`

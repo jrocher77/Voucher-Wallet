@@ -160,6 +160,8 @@ final class SharedModelContainer {
     }
 
     static func isDeletedLegacyVoucher(_ voucher: Voucher) -> Bool {
+        guard shouldApplyDeletedLegacyFilter(to: voucher) else { return false }
+
         let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
         let deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
         let deletedKeys = legacyVoucherPrivacyKeys(
@@ -194,6 +196,16 @@ final class SharedModelContainer {
             debugLog("⚠️ Purge des anciens bons supprimés impossible : \(error.localizedDescription)")
             return false
         }
+    }
+
+    private static func shouldApplyDeletedLegacyFilter(to voucher: Voucher) -> Bool {
+        guard voucher.managedObjectContext != nil,
+              !voucher.isDeleted,
+              let store = voucher.objectID.persistentStore else {
+            return true
+        }
+
+        return store.configurationName != sharedConfigurationName
     }
 
     nonisolated private static func migrateLegacyVoucherStoredKeysIfNeeded() {
@@ -795,7 +807,9 @@ final class SharedModelContainer {
         deletedIDs: Set<String>,
         deletedKeys: Set<String>
     ) -> Bool {
-        deletedIDs.contains(voucher.id.uuidString) ||
+        guard shouldApplyDeletedLegacyFilter(to: voucher) else { return false }
+
+        return deletedIDs.contains(voucher.id.uuidString) ||
             !legacyVoucherStorageLookupKeys(for: voucher.voucherNumber).isDisjoint(with: deletedKeys)
     }
 

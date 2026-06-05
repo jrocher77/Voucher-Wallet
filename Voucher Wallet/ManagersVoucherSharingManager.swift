@@ -53,6 +53,7 @@ final class VoucherSharingManager {
         let voucherID: UUID
         let sharedStore: NSPersistentStore
         let onFinished: (() -> Void)?
+        let reportsErrors: Bool
         var attempt: Int
     }
 
@@ -185,6 +186,16 @@ final class VoucherSharingManager {
             rememberShareZone(share.recordID.zoneID, for: voucherID)
         }
         return share
+    }
+
+    func isDisplayableVoucher(_ voucher: Voucher) -> Bool {
+        guard voucher.managedObjectContext != nil,
+              !voucher.isDeleted,
+              voucher.safeID != nil else {
+            return false
+        }
+        guard voucher.isReceivedShare else { return true }
+        return voucher.sharingStartedAt != nil && share(for: voucher) != nil
     }
 
     func share(for objectID: NSManagedObjectID) async throws -> CKShare? {
@@ -561,6 +572,7 @@ final class VoucherSharingManager {
             voucherID: voucherID,
             sharedStore: sharedStore,
             onFinished: onFinished,
+            reportsErrors: true,
             attempt: 1
         )
 
@@ -569,6 +581,53 @@ final class VoucherSharingManager {
             self.receivedShareRemovalQueue.append(removal)
             self.processNextReceivedShareRemoval()
         }
+    }
+
+    @discardableResult
+    func removeObsoleteReceivedShares(_ vouchers: [Voucher], reason: String) -> Bool {
+        guard let sharedStore = persistence.sharedStore else { return false }
+        let context = persistence.container.viewContext
+        var didScheduleRemoval = false
+        var didDeleteLocally = false
+
+        for voucher in vouchers where voucher.managedObjectContext != nil && !voucher.isDeleted {
+            guard voucher.objectID.persistentStore == sharedStore else { continue }
+            guard !isDisplayableVoucher(voucher) else { continue }
+
+            if let voucherID = voucher.safeID,
+               let zoneID = share(for: voucher)?.recordID.zoneID ?? Self.storedShareZone(for: voucherID) {
+                receivedShareRemovalQueue.append(
+                    ReceivedShareRemoval(
+                        zoneID: zoneID,
+                        voucherID: voucherID,
+                        sharedStore: sharedStore,
+                        onFinished: nil,
+                        reportsErrors: false,
+                        attempt: 1
+                    )
+                )
+                didScheduleRemoval = true
+            } else {
+                context.delete(voucher)
+                didDeleteLocally = true
+            }
+        }
+
+        if didDeleteLocally {
+            do {
+                try context.save()
+            } catch {
+                debugLog("Partage reçu obsolète - suppression locale impossible (\(reason)): \(error.localizedDescription)")
+            }
+        }
+        if didScheduleRemoval {
+            debugLog("Partage reçu obsolète - purge planifiée (\(reason))")
+            processNextReceivedShareRemoval()
+        }
+        if didScheduleRemoval || didDeleteLocally {
+            WidgetReloader.reloadAllWidgets()
+        }
+        return didScheduleRemoval || didDeleteLocally
     }
 
     private func processNextReceivedShareRemoval() {
@@ -596,7 +655,9 @@ final class VoucherSharingManager {
                 }
 
                 if let error {
-                    self.lastErrorMessage = "Impossible de quitter le partage pour le moment. Réessayez dans quelques secondes."
+                    if removal.reportsErrors {
+                        self.lastErrorMessage = "Impossible de quitter le partage pour le moment. Réessayez dans quelques secondes."
+                    }
                     debugLog("Erreur lors de la sortie du partage: \(error.localizedDescription)")
                 } else {
                     FavoritesManager.deletePersonalPreference(for: removal.voucherID, in: self.persistence.container.viewContext)

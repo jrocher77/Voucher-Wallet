@@ -591,11 +591,7 @@ struct VoucherDetailView: View {
     }
 
     private var isCurrentVoucherUsableForSharedRefresh: Bool {
-        voucher.managedObjectContext != nil &&
-            !voucher.isDeleted &&
-            voucher.safeID != nil &&
-            voucher.isInActiveShare &&
-            (!voucher.isReceivedShare || sharingManager.share(for: voucher) != nil)
+        sharingManager.isDisplayableVoucher(voucher) && voucher.isInActiveShare
     }
 
     private func generateCodeImage() -> UIImage? {
@@ -891,10 +887,7 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
     }
 
     private var isCurrentVoucherUsableForDisplay: Bool {
-        voucher.managedObjectContext != nil &&
-            !voucher.isDeleted &&
-            voucher.safeID != nil &&
-            (!voucher.isReceivedShare || sharingManager.share(for: voucher) != nil)
+        sharingManager.isDisplayableVoucher(voucher)
     }
 
     private var isCurrentVoucherUsableForSharedRefresh: Bool {

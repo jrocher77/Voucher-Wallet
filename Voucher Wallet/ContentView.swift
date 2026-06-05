@@ -88,12 +88,11 @@ struct ContentView: View {
         _ = receivedShareRevision
         var seenObjectIDs = Set<NSManagedObjectID>()
         let uniqueObjects = (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
-            guard voucher.managedObjectContext != nil, !voucher.isDeleted else { return false }
+            guard sharingManager.isDisplayableVoucher(voucher) else { return false }
             guard !SharedModelContainer.isDeletedLegacyVoucher(voucher) else { return false }
             return seenObjectIDs.insert(voucher.objectID).inserted
         }.filter { voucher in
-            voucher.managedObjectContext != nil &&
-                !voucher.isDeleted &&
+            sharingManager.isDisplayableVoucher(voucher) &&
                 !SharedModelContainer.isDeletedLegacyVoucher(voucher)
         }
         return uniqueObjects.reduce(into: [UUID: Voucher]()) { result, voucher in
@@ -523,14 +522,19 @@ struct ContentView: View {
         request.returnsObjectsAsFaults = false
 
         do {
-            receivedSharedVouchers = try modelContext.fetch(request).filter { voucher in
-                voucher.managedObjectContext != nil &&
-                    !voucher.isDeleted &&
-                    !SharedModelContainer.isDeletedLegacyVoucher(voucher) &&
-                    voucher.safeID != nil &&
-                    sharingManager.share(for: voucher) != nil
+            let fetchedSharedVouchers = try modelContext.fetch(request)
+            let removedObsoleteShares = sharingManager.removeObsoleteReceivedShares(
+                fetchedSharedVouchers,
+                reason: reason
+            )
+            receivedSharedVouchers = fetchedSharedVouchers.filter { voucher in
+                sharingManager.isDisplayableVoucher(voucher) &&
+                    !SharedModelContainer.isDeletedLegacyVoucher(voucher)
             }
             receivedShareRevision += 1
+            if removedObsoleteShares {
+                favoriteRevision += 1
+            }
             debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")
         } catch {
             debugLog("Lecture du wallet partagé impossible (\(reason)): \(error.localizedDescription)")
@@ -815,7 +819,7 @@ struct ContentView: View {
                 guard item.voucher.managedObjectContext != nil,
                       !item.voucher.isDeleted,
                       item.voucher.safeID != nil,
-                      !item.voucher.isReceivedShare || sharingManager.share(for: item.voucher) != nil else {
+                      sharingManager.isDisplayableVoucher(item.voucher) else {
                     refreshVisibleVouchers(reason: "ignored-unavailable-voucher-tap")
                     return
                 }

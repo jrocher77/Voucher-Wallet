@@ -523,18 +523,11 @@ struct ContentView: View {
 
         do {
             let fetchedSharedVouchers = try modelContext.fetch(request)
-            let removedObsoleteShares = sharingManager.removeObsoleteReceivedShares(
-                fetchedSharedVouchers,
-                reason: reason
-            )
             receivedSharedVouchers = fetchedSharedVouchers.filter { voucher in
                 sharingManager.isDisplayableVoucher(voucher) &&
                     !SharedModelContainer.isDeletedLegacyVoucher(voucher)
             }
             receivedShareRevision += 1
-            if removedObsoleteShares {
-                favoriteRevision += 1
-            }
             debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")
         } catch {
             debugLog("Lecture du wallet partagé impossible (\(reason)): \(error.localizedDescription)")

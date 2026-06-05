@@ -99,6 +99,18 @@ extension VoucherSharingManager {
         }
     }
 
+    func refreshSharedExpenseMirrors(
+        for vouchers: [Voucher],
+        retryDelays: [TimeInterval]
+    ) async -> Bool {
+        var didChange = await refreshSharedExpenseMirrors(for: vouchers)
+        for delay in retryDelays where !didChange {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            didChange = await refreshSharedExpenseMirrors(for: vouchers)
+        }
+        return didChange
+    }
+
     private func saveSharedExpenseMirror(
         _ payload: SharedExpenseMirrorPayload,
         voucherObjectID: NSManagedObjectID,

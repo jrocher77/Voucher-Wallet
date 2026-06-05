@@ -549,7 +549,10 @@ struct VoucherDetailView: View {
         guard voucher.isInActiveShare else { return }
         sharingManager.persistence.requestCloudRefresh(minimumInterval: 0)
         sharingManager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0])
-        _ = await sharingManager.refreshSharedExpenseMirrors(for: [voucher])
+        _ = await sharingManager.refreshSharedExpenseMirrors(
+            for: [voucher],
+            retryDelays: [1.0, 3.0, 6.0, 12.0]
+        )
         refreshCurrentVoucher(reloadExpenses: true, reloadVoucher: true)
     }
 
@@ -557,7 +560,10 @@ struct VoucherDetailView: View {
         guard voucher.isInActiveShare else { return }
 
         Task { @MainActor in
-            let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(for: [voucher])
+            let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(
+                for: [voucher],
+                retryDelays: [1.0, 3.0, 6.0]
+            )
             guard mirroredChanges else { return }
             debugLog("Miroir des dépenses du détail appliqué (\(reason))")
             refreshCurrentVoucher(reloadExpenses: true, reloadVoucher: true)
@@ -839,7 +845,10 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
                 guard voucher.isInActiveShare else { return }
                 Task { @MainActor in
-                    _ = await sharingManager.refreshSharedExpenseMirrors(for: [voucher])
+                    _ = await sharingManager.refreshSharedExpenseMirrors(
+                        for: [voucher],
+                        retryDelays: [1.0, 3.0, 6.0]
+                    )
                     refresh(reloadExpenses: true, reloadVoucher: true)
                 }
             }

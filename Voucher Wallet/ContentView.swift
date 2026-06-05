@@ -450,7 +450,10 @@ struct ContentView: View {
         guard !sharedVouchers.isEmpty else { return }
 
         Task { @MainActor in
-            let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(for: sharedVouchers)
+            let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(
+                for: sharedVouchers,
+                retryDelays: [1.0, 3.0, 6.0]
+            )
             guard mirroredChanges else { return }
             debugLog("Miroir des dépenses partagées appliqué (\(reason))")
             refreshVisibleVouchers(reason: "shared-expense-mirror-\(reason)")
@@ -489,7 +492,10 @@ struct ContentView: View {
         sharingManager.persistence.requestCloudRefresh(minimumInterval: 0)
         sharingManager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0])
 
-        let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(for: sharedVouchers)
+        let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(
+            for: sharedVouchers,
+            retryDelays: [1.0, 3.0, 6.0, 12.0]
+        )
         refreshVisibleVouchers(reason: "manual-pull-refresh")
 
         if remoteTransactionRevision > startingRevision || mirroredChanges {

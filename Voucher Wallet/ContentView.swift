@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreData
+import CloudKit
 import Combine
 import Network
 import UniformTypeIdentifiers
@@ -39,6 +40,8 @@ struct ContentView: View {
     @State private var sharingStatusToken = UUID()
     @State private var receivedSharedVouchers: [Voucher] = []
     @State private var receivedShareRevision = 0
+    @State private var unavailableReceivedShareIDs = Set<UUID>()
+    @State private var validatingReceivedShareIDs = Set<UUID>()
     @State private var cloudNetworkMonitor = NWPathMonitor()
     @State private var cloudNetworkMonitorQueue = DispatchQueue(label: "VoucherWallet.CloudNetworkMonitor")
     @State private var isCloudNetworkAvailable = true
@@ -89,10 +92,12 @@ struct ContentView: View {
         var seenObjectIDs = Set<NSManagedObjectID>()
         let uniqueObjects = (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
             guard sharingManager.isDisplayableVoucher(voucher) else { return false }
+            guard !isUnavailableReceivedShare(voucher) else { return false }
             guard !SharedModelContainer.isDeletedLegacyVoucher(voucher) else { return false }
             return seenObjectIDs.insert(voucher.objectID).inserted
         }.filter { voucher in
             sharingManager.isDisplayableVoucher(voucher) &&
+                !isUnavailableReceivedShare(voucher) &&
                 !SharedModelContainer.isDeletedLegacyVoucher(voucher)
         }
         return uniqueObjects.reduce(into: [UUID: Voucher]()) { result, voucher in
@@ -525,12 +530,58 @@ struct ContentView: View {
             let fetchedSharedVouchers = try modelContext.fetch(request)
             receivedSharedVouchers = fetchedSharedVouchers.filter { voucher in
                 sharingManager.isDisplayableVoucher(voucher) &&
+                    !isUnavailableReceivedShare(voucher) &&
                     !SharedModelContainer.isDeletedLegacyVoucher(voucher)
             }
+            validateReceivedShares(fetchedSharedVouchers, reason: reason)
             receivedShareRevision += 1
             debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")
         } catch {
             debugLog("Lecture du wallet partagé impossible (\(reason)): \(error.localizedDescription)")
+        }
+    }
+
+    private func isUnavailableReceivedShare(_ voucher: Voucher) -> Bool {
+        guard voucher.isReceivedShare, let voucherID = voucher.safeID else { return false }
+        return unavailableReceivedShareIDs.contains(voucherID)
+    }
+
+    private func validateReceivedShares(_ vouchers: [Voucher], reason: String) {
+        for voucher in vouchers where voucher.isReceivedShare {
+            guard let voucherID = voucher.safeID,
+                  !validatingReceivedShareIDs.contains(voucherID) else {
+                continue
+            }
+
+            let shareRecordID = sharingManager.share(for: voucher)?.recordID
+            let fallbackZoneID = shareRecordID?.zoneID ?? VoucherSharingManager.storedShareZone(for: voucherID)
+            guard shareRecordID != nil || fallbackZoneID != nil else {
+                continue
+            }
+
+            validatingReceivedShareIDs.insert(voucherID)
+            Task { @MainActor in
+                let availability = await sharingManager.receivedShareAvailability(
+                    shareRecordID: shareRecordID,
+                    fallbackZoneID: fallbackZoneID
+                )
+                validatingReceivedShareIDs.remove(voucherID)
+
+                switch availability {
+                case .available:
+                    if unavailableReceivedShareIDs.remove(voucherID) != nil {
+                        receivedShareRevision += 1
+                    }
+                case .unavailable:
+                    if unavailableReceivedShareIDs.insert(voucherID).inserted {
+                        debugLog("Partage reçu masqué après validation CloudKit (\(reason))")
+                        receivedShareRevision += 1
+                        WidgetReloader.reloadAllWidgets()
+                    }
+                case .unknown:
+                    break
+                }
+            }
         }
     }
     
@@ -812,7 +863,8 @@ struct ContentView: View {
                 guard item.voucher.managedObjectContext != nil,
                       !item.voucher.isDeleted,
                       item.voucher.safeID != nil,
-                      sharingManager.isDisplayableVoucher(item.voucher) else {
+                      sharingManager.isDisplayableVoucher(item.voucher),
+                      !isUnavailableReceivedShare(item.voucher) else {
                     refreshVisibleVouchers(reason: "ignored-unavailable-voucher-tap")
                     return
                 }

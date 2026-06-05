@@ -31,6 +31,12 @@ final class DismissAwareCloudSharingController: UICloudSharingController {
     }
 }
 
+enum ReceivedShareAvailability {
+    case available
+    case unavailable
+    case unknown
+}
+
 @MainActor
 @Observable
 final class VoucherSharingManager {
@@ -194,8 +200,38 @@ final class VoucherSharingManager {
               voucher.safeID != nil else {
             return false
         }
-        guard voucher.isReceivedShare else { return true }
-        return share(for: voucher) != nil
+        return true
+    }
+
+    nonisolated func receivedShareAvailability(
+        shareRecordID: CKRecord.ID?,
+        fallbackZoneID: CKRecordZone.ID?
+    ) async -> ReceivedShareAvailability {
+        let database = CKContainer(identifier: SharedModelContainer.cloudKitContainerIdentifier).sharedCloudDatabase
+        do {
+            if let shareRecordID {
+                _ = try await database.record(for: shareRecordID)
+            } else if let fallbackZoneID {
+                _ = try await database.recordZone(for: fallbackZoneID)
+            } else {
+                return .unknown
+            }
+            return .available
+        } catch {
+            return Self.receivedShareAvailability(from: error)
+        }
+    }
+
+    nonisolated private static func receivedShareAvailability(from error: Error) -> ReceivedShareAvailability {
+        guard let ckError = error as? CKError else {
+            return .unknown
+        }
+        switch ckError.code {
+        case .unknownItem, .zoneNotFound, .userDeletedZone:
+            return .unavailable
+        default:
+            return .unknown
+        }
     }
 
     func share(for objectID: NSManagedObjectID) async throws -> CKShare? {

@@ -170,6 +170,17 @@ extension Voucher {
     @nonobjc class func fetchRequest() -> NSFetchRequest<Voucher> {
         NSFetchRequest<Voucher>(entityName: "Voucher")
     }
+
+    var safeID: UUID? {
+        guard managedObjectContext != nil, !isDeleted else { return nil }
+        if let value = primitiveValue(forKey: "id") as? UUID {
+            return value
+        }
+        if let value = primitiveValue(forKey: "id") as? NSUUID {
+            return value as UUID
+        }
+        return nil
+    }
 }
 
 enum CodeType: String, Codable, CaseIterable {

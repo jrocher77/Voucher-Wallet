@@ -379,7 +379,9 @@ struct EditVoucherView: View {
         do {
             try modelContext.save()
             modelContext.refresh(voucher, mergeChanges: true)
-            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+            if let voucherID = voucher.safeID {
+                NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+            }
             if voucher.isFavorite {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }

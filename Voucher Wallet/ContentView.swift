@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreData
+import CloudKit
 import Combine
 import Network
 import UniformTypeIdentifiers
@@ -39,6 +40,8 @@ struct ContentView: View {
     @State private var sharingStatusToken = UUID()
     @State private var receivedSharedVouchers: [Voucher] = []
     @State private var receivedShareRevision = 0
+    @State private var unavailableReceivedShareIDs = Set<UUID>()
+    @State private var validatingReceivedShareIDs = Set<UUID>()
     @State private var cloudNetworkMonitor = NWPathMonitor()
     @State private var cloudNetworkMonitorQueue = DispatchQueue(label: "VoucherWallet.CloudNetworkMonitor")
     @State private var isCloudNetworkAvailable = true
@@ -88,20 +91,22 @@ struct ContentView: View {
         _ = receivedShareRevision
         var seenObjectIDs = Set<NSManagedObjectID>()
         let uniqueObjects = (Array(fetchedVouchers) + receivedSharedVouchers).filter { voucher in
-            guard voucher.managedObjectContext != nil, !voucher.isDeleted else { return false }
+            guard sharingManager.isDisplayableVoucher(voucher) else { return false }
+            guard !isUnavailableReceivedShare(voucher) else { return false }
             guard !SharedModelContainer.isDeletedLegacyVoucher(voucher) else { return false }
             return seenObjectIDs.insert(voucher.objectID).inserted
         }.filter { voucher in
-            voucher.managedObjectContext != nil &&
-                !voucher.isDeleted &&
+            sharingManager.isDisplayableVoucher(voucher) &&
+                !isUnavailableReceivedShare(voucher) &&
                 !SharedModelContainer.isDeletedLegacyVoucher(voucher)
         }
         return uniqueObjects.reduce(into: [UUID: Voucher]()) { result, voucher in
-            guard let existing = result[voucher.id] else {
-                result[voucher.id] = voucher
+            guard let voucherID = voucher.safeID else { return }
+            guard let existing = result[voucherID] else {
+                result[voucherID] = voucher
                 return
             }
-            result[voucher.id] = Self.preferredVisibleVoucher(existing, voucher)
+            result[voucherID] = Self.preferredVisibleVoucher(existing, voucher)
         }.map(\.value)
     }
 
@@ -141,12 +146,13 @@ struct ContentView: View {
         let isReceivedShare: Bool
         let isInActiveShare: Bool
 
-        init(voucher: Voucher) {
+        init?(voucher: Voucher) {
+            guard let voucherID = voucher.safeID else { return nil }
             let activeExpenses = voucher.activeExpensesList
             let activeTotal = activeExpenses.reduce(0) { $0 + $1.amount }
             let amount = voucher.amount
 
-            self.id = voucher.id
+            self.id = voucherID
             self.voucher = voucher
             self.storeName = voucher.storeName
             self.voucherNumber = voucher.voucherNumber
@@ -184,7 +190,7 @@ struct ContentView: View {
     @MainActor
     private var voucherItems: [VoucherListItem] {
         _ = favoriteRevision
-        return vouchers.map(VoucherListItem.init)
+        return vouchers.compactMap(VoucherListItem.init)
     }
     
     @MainActor
@@ -322,7 +328,7 @@ struct ContentView: View {
                 guard let voucherID = newValue else { return }
                 
                 // Trouver le voucher correspondant
-                if let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                if let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
                     // Naviguer vers le détail
                     navigationPath.append(voucher)
                     
@@ -403,7 +409,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
                 if let voucherID = notification.object as? UUID,
-                   let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                   let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
                     modelContext.refresh(voucher, mergeChanges: false)
                 } else {
                     refreshVisibleVouchers()
@@ -413,7 +419,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherExpensesDidChange)) { notification in
                 if let voucherID = notification.object as? UUID,
-                   let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                   let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
                     modelContext.refresh(voucher, mergeChanges: false)
                 } else {
                     refreshVisibleVouchers()
@@ -521,15 +527,61 @@ struct ContentView: View {
         request.returnsObjectsAsFaults = false
 
         do {
-            receivedSharedVouchers = try modelContext.fetch(request).filter { voucher in
-                voucher.managedObjectContext != nil &&
-                    !voucher.isDeleted &&
+            let fetchedSharedVouchers = try modelContext.fetch(request)
+            receivedSharedVouchers = fetchedSharedVouchers.filter { voucher in
+                sharingManager.isDisplayableVoucher(voucher) &&
+                    !isUnavailableReceivedShare(voucher) &&
                     !SharedModelContainer.isDeletedLegacyVoucher(voucher)
             }
+            validateReceivedShares(fetchedSharedVouchers, reason: reason)
             receivedShareRevision += 1
             debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")
         } catch {
             debugLog("Lecture du wallet partagé impossible (\(reason)): \(error.localizedDescription)")
+        }
+    }
+
+    private func isUnavailableReceivedShare(_ voucher: Voucher) -> Bool {
+        guard voucher.isReceivedShare, let voucherID = voucher.safeID else { return false }
+        return unavailableReceivedShareIDs.contains(voucherID)
+    }
+
+    private func validateReceivedShares(_ vouchers: [Voucher], reason: String) {
+        for voucher in vouchers where voucher.isReceivedShare {
+            guard let voucherID = voucher.safeID,
+                  !validatingReceivedShareIDs.contains(voucherID) else {
+                continue
+            }
+
+            let shareRecordID = sharingManager.share(for: voucher)?.recordID
+            let fallbackZoneID = shareRecordID?.zoneID ?? VoucherSharingManager.storedShareZone(for: voucherID)
+            guard shareRecordID != nil || fallbackZoneID != nil else {
+                continue
+            }
+
+            validatingReceivedShareIDs.insert(voucherID)
+            Task { @MainActor in
+                let availability = await sharingManager.receivedShareAvailability(
+                    shareRecordID: shareRecordID,
+                    fallbackZoneID: fallbackZoneID
+                )
+                validatingReceivedShareIDs.remove(voucherID)
+
+                switch availability {
+                case .available:
+                    if unavailableReceivedShareIDs.remove(voucherID) != nil {
+                        receivedShareRevision += 1
+                    }
+                case .unavailable:
+                    if unavailableReceivedShareIDs.insert(voucherID).inserted {
+                        debugLog("Partage reçu masqué après validation CloudKit (\(reason))")
+                        receivedShareRevision += 1
+                        WidgetReloader.reloadAllWidgets()
+                    }
+                case .unknown:
+                    break
+                }
+            }
         }
     }
     
@@ -808,6 +860,14 @@ struct ContentView: View {
     private func voucherRow(_ item: VoucherListItem, isFavoriteSection: Bool) -> some View {
         let row = ZStack(alignment: .topLeading) {
             Button {
+                guard item.voucher.managedObjectContext != nil,
+                      !item.voucher.isDeleted,
+                      item.voucher.safeID != nil,
+                      sharingManager.isDisplayableVoucher(item.voucher),
+                      !isUnavailableReceivedShare(item.voucher) else {
+                    refreshVisibleVouchers(reason: "ignored-unavailable-voucher-tap")
+                    return
+                }
                 navigationPath.append(item.voucher)
             } label: {
                 VoucherCardView(item: item.cardItem, showsFavoriteIcon: false)
@@ -934,13 +994,13 @@ struct ContentView: View {
     private func deleteVoucherPendingDeletion() {
         guard let voucher = voucherToDelete else { return }
         let objectID = voucher.objectID
-        let voucherID = voucher.id
+        guard let voucherID = voucher.safeID else { return }
         let wasFavorite = voucher.isFavorite
         voucherToDelete = nil
         navigationPath.removeLast(navigationPath.count)
 
         guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
-        sharingManager.revokeIfNeeded(for: voucherToDelete)
+        let revokeShareAfterDeletion = sharingManager.makeShareRevocationAction(for: voucherToDelete)
         SharedModelContainer.rememberDeletedVoucherForLegacyMigration(voucherToDelete)
         voucherToDelete.deletePersonalPreference(in: modelContext)
         modelContext.delete(voucherToDelete)
@@ -948,6 +1008,7 @@ struct ContentView: View {
             try modelContext.save()
             NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
             refreshVisibleVouchers()
+            revokeShareAfterDeletion?()
             if wasFavorite {
                 WidgetReloader.reloadFavoriteVouchersWidget()
             }

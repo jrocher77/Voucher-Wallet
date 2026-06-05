@@ -174,11 +174,12 @@ struct FavoriteVouchersProvider: TimelineProvider {
                     voucher.isFavorite
             }
             let uniqueVouchers = favoriteVouchers.reduce(into: [UUID: Voucher]()) { result, voucher in
-                guard let existing = result[voucher.id] else {
-                    result[voucher.id] = voucher
+                guard let voucherID = voucher.safeID else { return }
+                guard let existing = result[voucherID] else {
+                    result[voucherID] = voucher
                     return
                 }
-                result[voucher.id] = Self.preferredWidgetVoucher(existing, voucher)
+                result[voucherID] = Self.preferredWidgetVoucher(existing, voucher)
             }
             let vouchers = Array(uniqueVouchers.values).sorted { first, second in
                 if first.sortOrder == second.sortOrder {
@@ -189,9 +190,10 @@ struct FavoriteVouchersProvider: TimelineProvider {
             
             debugLog("🔍 Widget: Trouvé \(vouchers.count) cartes favorites")
             
-            let snapshots = vouchers.prefix(4).map { voucher in
-                VoucherSnapshot(
-                    id: voucher.id,
+            let snapshots = vouchers.prefix(4).compactMap { voucher -> VoucherSnapshot? in
+                guard let voucherID = voucher.safeID else { return nil }
+                return VoucherSnapshot(
+                    id: voucherID,
                     storeName: voucher.storeName,
                     remainingBalance: voucher.remainingBalance,
                     originalAmount: voucher.amount,

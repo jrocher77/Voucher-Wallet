@@ -31,6 +31,12 @@ final class DismissAwareCloudSharingController: UICloudSharingController {
     }
 }
 
+enum ReceivedShareAvailability {
+    case available
+    case unavailable
+    case unknown
+}
+
 @MainActor
 @Observable
 final class VoucherSharingManager {
@@ -53,6 +59,7 @@ final class VoucherSharingManager {
         let voucherID: UUID
         let sharedStore: NSPersistentStore
         let onFinished: (() -> Void)?
+        let reportsErrors: Bool
         var attempt: Int
     }
 
@@ -181,10 +188,50 @@ final class VoucherSharingManager {
     func share(for voucher: Voucher) -> CKShare? {
         guard !voucher.objectID.isTemporaryID else { return nil }
         let share = try? persistence.container.fetchShares(matching: [voucher.objectID])[voucher.objectID]
-        if let share {
-            rememberShareZone(share.recordID.zoneID, for: voucher.id)
+        if let share, let voucherID = voucher.safeID {
+            rememberShareZone(share.recordID.zoneID, for: voucherID)
         }
         return share
+    }
+
+    func isDisplayableVoucher(_ voucher: Voucher) -> Bool {
+        guard voucher.managedObjectContext != nil,
+              !voucher.isDeleted,
+              voucher.safeID != nil else {
+            return false
+        }
+        return true
+    }
+
+    nonisolated func receivedShareAvailability(
+        shareRecordID: CKRecord.ID?,
+        fallbackZoneID: CKRecordZone.ID?
+    ) async -> ReceivedShareAvailability {
+        let database = CKContainer(identifier: SharedModelContainer.cloudKitContainerIdentifier).sharedCloudDatabase
+        do {
+            if let shareRecordID {
+                _ = try await database.record(for: shareRecordID)
+            } else if let fallbackZoneID {
+                _ = try await database.recordZone(for: fallbackZoneID)
+            } else {
+                return .unknown
+            }
+            return .available
+        } catch {
+            return Self.receivedShareAvailability(from: error)
+        }
+    }
+
+    nonisolated private static func receivedShareAvailability(from error: Error) -> ReceivedShareAvailability {
+        guard let ckError = error as? CKError else {
+            return .unknown
+        }
+        switch ckError.code {
+        case .unknownItem, .zoneNotFound, .userDeletedZone:
+            return .unavailable
+        default:
+            return .unknown
+        }
     }
 
     func share(for objectID: NSManagedObjectID) async throws -> CKShare? {
@@ -241,6 +288,7 @@ final class VoucherSharingManager {
         var stoppedVoucherIDs: [UUID] = []
 
         for voucher in sharedVouchers {
+            let voucherID = voucher.safeID
             if let share = shares[voucher.objectID], share.hasInvitedParticipants {
                 pendingParticipantResolutionObjectIDs.remove(voucher.objectID)
                 continue
@@ -255,7 +303,9 @@ final class VoucherSharingManager {
             if shares[voucher.objectID] != nil {
                 voucher.sharingStartedAt = nil
                 pendingParticipantResolutionObjectIDs.remove(voucher.objectID)
-                stoppedVoucherIDs.append(voucher.id)
+                if let voucherID {
+                    stoppedVoucherIDs.append(voucherID)
+                }
             } else {
                 if let startedAt = voucher.sharingStartedAt,
                    Date().timeIntervalSince(startedAt) < 120 {
@@ -263,7 +313,9 @@ final class VoucherSharingManager {
                 }
                 voucher.sharingStartedAt = nil
                 pendingParticipantResolutionObjectIDs.remove(voucher.objectID)
-                stoppedVoucherIDs.append(voucher.id)
+                if let voucherID {
+                    stoppedVoucherIDs.append(voucherID)
+                }
             }
         }
 
@@ -475,6 +527,10 @@ final class VoucherSharingManager {
                         continuation.resume(throwing: CocoaError(.fileReadNoSuchFile))
                         return
                     }
+                    guard let voucherID = voucher.safeID else {
+                        continuation.resume(throwing: CocoaError(.fileReadCorruptFile))
+                        return
+                    }
 
                     let storeName = voucher.storeName.trimmingCharacters(in: .whitespacesAndNewlines)
                     let title = storeName.isEmpty ? "Bon d'achat" : "Bon \(storeName)"
@@ -500,7 +556,7 @@ final class VoucherSharingManager {
                         }
                         share[CKShare.SystemFieldKey.title] = title as CKRecordValue
                         share.publicPermission = .none
-                        Self.rememberShareZone(share.recordID.zoneID, for: voucher.id)
+                        Self.rememberShareZone(share.recordID.zoneID, for: voucherID)
                         let resolvedContainer = cloudContainer ?? CKContainer(identifier: cloudContainerIdentifier)
                         continuation.resume(returning: (share, resolvedContainer))
                     }
@@ -542,12 +598,17 @@ final class VoucherSharingManager {
         after delay: TimeInterval = 0,
         onFinished: (() -> Void)? = nil
     ) {
-        guard let share = share(for: voucher), let sharedStore = persistence.sharedStore else { return }
+        guard let share = share(for: voucher),
+              let sharedStore = persistence.sharedStore,
+              let voucherID = voucher.safeID else {
+            return
+        }
         let removal = ReceivedShareRemoval(
             zoneID: share.recordID.zoneID,
-            voucherID: voucher.id,
+            voucherID: voucherID,
             sharedStore: sharedStore,
             onFinished: onFinished,
+            reportsErrors: true,
             attempt: 1
         )
 
@@ -583,7 +644,9 @@ final class VoucherSharingManager {
                 }
 
                 if let error {
-                    self.lastErrorMessage = "Impossible de quitter le partage pour le moment. Réessayez dans quelques secondes."
+                    if removal.reportsErrors {
+                        self.lastErrorMessage = "Impossible de quitter le partage pour le moment. Réessayez dans quelques secondes."
+                    }
                     debugLog("Erreur lors de la sortie du partage: \(error.localizedDescription)")
                 } else {
                     FavoritesManager.deletePersonalPreference(for: removal.voucherID, in: self.persistence.container.viewContext)
@@ -606,48 +669,50 @@ final class VoucherSharingManager {
             message.contains("was cancelled because there is already")
     }
 
-    func revokeIfNeeded(for voucher: Voucher) {
-        guard let privateStore = persistence.privateStore else { return }
-        let voucherID = voucher.id
+    func makeShareRevocationAction(for voucher: Voucher) -> (() -> Void)? {
+        guard let privateStore = persistence.privateStore else { return nil }
+        guard let voucherID = voucher.safeID else { return nil }
         let zoneID = share(for: voucher)?.recordID.zoneID ?? Self.storedShareZone(for: voucherID)
-        guard let zoneID else { return }
+        guard let zoneID else { return nil }
 
-        voucher.sharingStartedAt = nil
-        try? persistence.container.viewContext.save()
-        NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-        NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucher.id)
-        persistence.container.purgeObjectsAndRecordsInZone(
-            with: zoneID,
-            in: privateStore
-        ) { _, error in
-            if let error {
-                debugLog("Erreur lors de la purge de la zone CloudKit du bon supprimé: \(error.localizedDescription)")
-            } else {
-                Self.forgetShareZone(for: voucherID)
-            }
-            Task { @MainActor in
-                WidgetReloader.reloadAllWidgets()
+        return { [weak self] in
+            guard let self else { return }
+            self.persistence.container.purgeObjectsAndRecordsInZone(
+                with: zoneID,
+                in: privateStore
+            ) { _, error in
+                if let error {
+                    debugLog("Erreur lors de la purge de la zone CloudKit du bon supprimé: \(error.localizedDescription)")
+                } else {
+                    Self.forgetShareZone(for: voucherID)
+                }
+                Task { @MainActor in
+                    NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucherID)
+                    WidgetReloader.reloadAllWidgets()
+                }
             }
         }
     }
 
     func markSharingStopped(for voucher: Voucher) {
+        guard let voucherID = voucher.safeID else { return }
         voucher.sharingStartedAt = nil
         pendingParticipantResolutionObjectIDs.remove(voucher.objectID)
         try? persistence.container.viewContext.save()
-        NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-        NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucher.id)
+        NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+        NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucherID)
         WidgetReloader.reloadAllWidgets()
     }
 
     func markSharingStarted(for voucher: Voucher, pendingParticipants: Bool = false) {
+        guard let voucherID = voucher.safeID else { return }
         voucher.sharingStartedAt = Date()
         if pendingParticipants {
             pendingParticipantResolutionObjectIDs.insert(voucher.objectID)
         }
         try? persistence.container.viewContext.save()
-        NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-        NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucher.id)
+        NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+        NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucherID)
         WidgetReloader.reloadAllWidgets()
     }
 
@@ -914,8 +979,8 @@ struct CloudVoucherSharingPresenter: UIViewControllerRepresentable {
 
             if let share = currentShare {
                 manager.restrictParticipantsToOwnerManagedInvites(in: share)
-                if let voucher = hostController?.voucher {
-                    manager.rememberShareZone(share.recordID.zoneID, for: voucher.id)
+                if let voucher = hostController?.voucher, let voucherID = voucher.safeID {
+                    manager.rememberShareZone(share.recordID.zoneID, for: voucherID)
                 }
             }
 

@@ -213,7 +213,7 @@ struct VoucherDetailView: View {
                 // Restaurer la luminosité quand l'app passe en arrière-plan
                 if newPhase == .background || newPhase == .inactive {
                     restoreBrightness()
-                } else if newPhase == .active && voucher.isInActiveShare {
+                } else if newPhase == .active && isCurrentVoucherUsableForSharedRefresh {
                     sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
                     refreshSharedExpenseMirrorsInBackground(reason: "detail-scene-active")
                 }
@@ -546,7 +546,7 @@ struct VoucherDetailView: View {
     
     @MainActor
     private func refreshSharedVoucherFromPull() async {
-        guard voucher.isInActiveShare else { return }
+        guard isCurrentVoucherUsableForSharedRefresh else { return }
         sharingManager.persistence.requestCloudRefresh(minimumInterval: 0)
         sharingManager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0])
         _ = await sharingManager.refreshSharedExpenseMirrors(
@@ -557,9 +557,10 @@ struct VoucherDetailView: View {
     }
 
     private func refreshSharedExpenseMirrorsInBackground(reason: String) {
-        guard voucher.isInActiveShare else { return }
+        guard isCurrentVoucherUsableForSharedRefresh else { return }
 
         Task { @MainActor in
+            guard isCurrentVoucherUsableForSharedRefresh else { return }
             let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(
                 for: [voucher],
                 retryDelays: [1.0, 3.0, 6.0]
@@ -589,6 +590,10 @@ struct VoucherDetailView: View {
         }
     }
 
+    private var isCurrentVoucherUsableForSharedRefresh: Bool {
+        sharingManager.isDisplayableVoucher(voucher) && voucher.isInActiveShare
+    }
+
     private func generateCodeImage() -> UIImage? {
         // Si une image est déjà stockée, l'utiliser
         if let imageData = voucher.codeImageData,
@@ -612,14 +617,14 @@ struct VoucherDetailView: View {
     
     private func deleteVoucher() {
         let objectID = voucher.objectID
-        let voucherID = voucher.id
+        guard let voucherID = voucher.safeID else { return }
         let wasFavorite = voucher.isFavorite
         isVoucherDeleted = true
         dismiss()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
-            sharingManager.revokeIfNeeded(for: voucherToDelete)
+            let revokeShareAfterDeletion = sharingManager.makeShareRevocationAction(for: voucherToDelete)
             SharedModelContainer.rememberDeletedVoucherForLegacyMigration(voucherToDelete)
             voucherToDelete.deletePersonalPreference(in: modelContext)
             modelContext.delete(voucherToDelete)
@@ -627,6 +632,7 @@ struct VoucherDetailView: View {
             do {
                 try modelContext.save()
                 NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+                revokeShareAfterDeletion?()
                 if wasFavorite {
                     WidgetReloader.reloadFavoriteVouchersWidget()
                 }
@@ -826,25 +832,31 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
                 favoriteRevision += 1
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherExpensesDidChange)) { notification in
-                guard notification.object as? UUID == voucher.id else { return }
+                guard let voucherID = voucher.safeID,
+                      notification.object as? UUID == voucherID else { return }
                 refresh(reloadExpenses: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
-                if let voucherID = notification.object as? UUID, voucherID != voucher.id {
+                if let notifiedVoucherID = notification.object as? UUID,
+                   let voucherID = voucher.safeID,
+                   notifiedVoucherID != voucherID {
                     return
                 }
                 refresh(reloadVoucher: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherSharingDidChange)) { notification in
-                if let voucherID = notification.object as? UUID, voucherID != voucher.id {
+                if let notifiedVoucherID = notification.object as? UUID,
+                   let voucherID = voucher.safeID,
+                   notifiedVoucherID != voucherID {
                     return
                 }
                 favoriteRevision += 1
                 refresh(reloadVoucher: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
-                guard voucher.isInActiveShare else { return }
+                guard isCurrentVoucherUsableForSharedRefresh else { return }
                 Task { @MainActor in
+                    guard isCurrentVoucherUsableForSharedRefresh else { return }
                     _ = await sharingManager.refreshSharedExpenseMirrors(
                         for: [voucher],
                         retryDelays: [1.0, 3.0, 6.0]
@@ -856,13 +868,13 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
 
     private func refresh(reloadExpenses: Bool = false, reloadVoucher: Bool = false) {
         modelContext.processPendingChanges()
-        if voucher.isDeleted || voucher.managedObjectContext == nil {
+        if !isCurrentVoucherUsableForDisplay {
             isVoucherDeleted = true
             return
         }
         modelContext.refresh(voucher, mergeChanges: true)
         sharingManager.reconcileSharingStates()
-        if voucher.isDeleted || voucher.managedObjectContext == nil {
+        if !isCurrentVoucherUsableForDisplay {
             isVoucherDeleted = true
             return
         }
@@ -872,6 +884,14 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
         if reloadVoucher {
             voucherRevision += 1
         }
+    }
+
+    private var isCurrentVoucherUsableForDisplay: Bool {
+        sharingManager.isDisplayableVoucher(voucher)
+    }
+
+    private var isCurrentVoucherUsableForSharedRefresh: Bool {
+        isCurrentVoucherUsableForDisplay && voucher.isInActiveShare
     }
 }
 

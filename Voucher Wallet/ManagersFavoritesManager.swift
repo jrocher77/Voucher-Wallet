@@ -53,11 +53,12 @@ final class FavoritesManager {
                     voucher.isFavorite
             }
             let uniqueVouchers = vouchers.reduce(into: [UUID: Voucher]()) { result, voucher in
-                guard let existing = result[voucher.id] else {
-                    result[voucher.id] = voucher
+                guard let voucherID = voucher.safeID else { return }
+                guard let existing = result[voucherID] else {
+                    result[voucherID] = voucher
                     return
                 }
-                result[voucher.id] = Self.preferredFavoriteVoucher(existing, voucher)
+                result[voucherID] = Self.preferredFavoriteVoucher(existing, voucher)
             }.map(\.value)
 
             return uniqueVouchers.sorted {
@@ -118,7 +119,7 @@ final class FavoritesManager {
     static func deleteOrphanedPreferences(in context: NSManagedObjectContext) -> Bool {
         do {
             let vouchers = try context.fetch(Voucher.fetchRequest())
-            let existingVoucherIDs = Set(vouchers.filter { $0.managedObjectContext != nil && !$0.isDeleted }.map(\.id))
+            let existingVoucherIDs = Set(vouchers.compactMap(\.safeID))
             let preferences = try context.fetch(PersonalVoucherPreference.fetchRequest())
             let orphanedPreferences = preferences.filter { !existingVoucherIDs.contains($0.voucherID) }
             guard !orphanedPreferences.isEmpty else { return false }

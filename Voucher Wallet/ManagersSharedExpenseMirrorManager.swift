@@ -49,9 +49,21 @@ extension VoucherSharingManager {
     }
 
     func mirrorSharedExpense(_ expense: Expense, for voucher: Voucher, isDeleted: Bool = false) {
-        let payload = sharedExpenseMirrorPayload(for: expense, voucher: voucher, isDeleted: isDeleted)
+        guard let voucherID = voucher.safeID else {
+            debugLog("[Partage][Miroir] Sauvegarde ignorée: identifiant du bon indisponible")
+            return
+        }
+        guard let expenseID = expense.safeID else {
+            debugLog("[Partage][Miroir] Sauvegarde ignorée: identifiant de la dépense indisponible")
+            return
+        }
+        let payload = sharedExpenseMirrorPayload(
+            for: expense,
+            expenseID: expenseID,
+            voucherID: voucherID,
+            isDeleted: isDeleted
+        )
         let voucherObjectID = voucher.objectID
-        let voucherID = voucher.id
         let shouldAttemptImmediately = voucher.isInActiveShare || Self.storedShareZone(for: voucherID) != nil
 
         Task { @MainActor [weak self] in
@@ -66,12 +78,13 @@ extension VoucherSharingManager {
 
     private func sharedExpenseMirrorPayload(
         for expense: Expense,
-        voucher: Voucher,
+        expenseID: UUID,
+        voucherID: UUID,
         isDeleted: Bool
     ) -> SharedExpenseMirrorPayload {
         SharedExpenseMirrorPayload(
-            voucherID: voucher.id,
-            expenseID: expense.id,
+            voucherID: voucherID,
+            expenseID: expenseID,
             amount: expense.amount,
             date: expense.date,
             note: expense.note,
@@ -83,7 +96,7 @@ extension VoucherSharingManager {
 
     func refreshSharedExpenseMirrors(for vouchers: [Voucher]) async -> Bool {
         var didChange = false
-        for voucher in vouchers where voucher.isInActiveShare && voucher.managedObjectContext != nil && !voucher.isDeleted {
+        for voucher in vouchers where voucher.isInActiveShare && voucher.safeID != nil {
             didChange = await importSharedExpenseMirrors(for: voucher) || didChange
         }
         guard didChange else { return false }
@@ -120,8 +133,12 @@ extension VoucherSharingManager {
             debugLog("[Partage][Miroir] Sauvegarde ignorée: bon introuvable")
             return
         }
+        guard let voucherID = voucher.safeID else {
+            debugLog("[Partage][Miroir] Sauvegarde ignorée: identifiant du bon indisponible")
+            return
+        }
 
-        guard let zoneID = await shareZoneID(for: voucher) else {
+        guard let zoneID = await shareZoneID(for: voucher, voucherID: voucherID) else {
             scheduleSharedExpenseMirrorRetry(
                 payload,
                 voucherObjectID: voucherObjectID,
@@ -199,11 +216,14 @@ extension VoucherSharingManager {
     }
 
     private func importSharedExpenseMirrors(for voucher: Voucher) async -> Bool {
-        guard let zoneID = await shareZoneID(for: voucher) else { return false }
+        guard let voucherID = voucher.safeID,
+              let zoneID = await shareZoneID(for: voucher, voucherID: voucherID) else {
+            return false
+        }
 
         let query = CKQuery(
             recordType: SharedExpenseMirrorRecord.recordType,
-            predicate: NSPredicate(format: "%K == %@", SharedExpenseMirrorRecord.voucherID, voucher.id.uuidString)
+            predicate: NSPredicate(format: "%K == %@", SharedExpenseMirrorRecord.voucherID, voucherID.uuidString)
         )
         let desiredKeys = SharedExpenseMirrorRecord.importDesiredKeys
         let database = cloudDatabase(for: voucher)
@@ -217,7 +237,8 @@ extension VoucherSharingManager {
             )
             var didChange = importSharedExpenseMirrorResults(
                 result.matchResults,
-                into: voucher
+                into: voucher,
+                voucherID: voucherID
             )
 
             while let cursor = result.queryCursor {
@@ -228,13 +249,14 @@ extension VoucherSharingManager {
                 )
                 didChange = importSharedExpenseMirrorResults(
                     result.matchResults,
-                    into: voucher
+                    into: voucher,
+                    voucherID: voucherID
                 ) || didChange
             }
 
             if didChange {
-                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
-                NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
+                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucherID)
+                NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
             }
             return didChange
         } catch {
@@ -245,21 +267,22 @@ extension VoucherSharingManager {
 
     private func importSharedExpenseMirrorResults(
         _ results: [(CKRecord.ID, Result<CKRecord, any Error>)],
-        into voucher: Voucher
+        into voucher: Voucher,
+        voucherID: UUID
     ) -> Bool {
         var didChange = false
         for (_, recordResult) in results {
             guard case .success(let record) = recordResult else {
                 continue
             }
-            didChange = importSharedExpenseMirror(record, into: voucher) || didChange
+            didChange = importSharedExpenseMirror(record, into: voucher, voucherID: voucherID) || didChange
         }
         return didChange
     }
 
-    private func importSharedExpenseMirror(_ record: CKRecord, into voucher: Voucher) -> Bool {
+    private func importSharedExpenseMirror(_ record: CKRecord, into voucher: Voucher, voucherID: UUID) -> Bool {
         guard isImportableSharedVoucher(voucher),
-              stringValue(record[SharedExpenseMirrorRecord.voucherID]) == voucher.id.uuidString else {
+              stringValue(record[SharedExpenseMirrorRecord.voucherID]) == voucherID.uuidString else {
             return false
         }
 
@@ -278,7 +301,7 @@ extension VoucherSharingManager {
         let amount = isDeleted ? 0 : recordAmount
 
         let matchingExpenses = fetchExpenses(with: expenseID, in: context)
-        let existing = preferredExistingExpense(from: matchingExpenses, for: voucher)
+        let existing = preferredExistingExpense(from: matchingExpenses, for: voucher, voucherID: voucherID)
         guard existing != nil || !isDeleted else {
             return false
         }
@@ -311,7 +334,8 @@ extension VoucherSharingManager {
         voucher.managedObjectContext != nil &&
             !voucher.isDeleted &&
             voucher.objectID.persistentStore != nil &&
-            voucher.isInActiveShare
+            voucher.isInActiveShare &&
+            voucher.safeID != nil
     }
 
     private func fetchExpenses(with id: UUID, in context: NSManagedObjectContext) -> [Expense] {
@@ -320,10 +344,10 @@ extension VoucherSharingManager {
         return (try? context.fetch(request)) ?? []
     }
 
-    private func preferredExistingExpense(from expenses: [Expense], for voucher: Voucher) -> Expense? {
+    private func preferredExistingExpense(from expenses: [Expense], for voucher: Voucher, voucherID: UUID) -> Expense? {
         expenses.first { expense in
             isReusableExpense(expense, for: voucher) &&
-                expense.voucher?.id == voucher.id
+                expense.voucher?.safeID == voucherID
         } ?? expenses.first { expense in
             isReusableExpense(expense, for: voucher) &&
                 expense.voucher == nil
@@ -336,7 +360,8 @@ extension VoucherSharingManager {
               expense.objectID.persistentStore == voucher.objectID.persistentStore else {
             return false
         }
-        return expense.voucher == nil || expense.voucher?.id == voucher.id
+        guard let voucherID = voucher.safeID else { return false }
+        return expense.voucher == nil || expense.voucher?.safeID == voucherID
     }
 
     private func canMergeExpense(_ expense: Expense, into canonical: Expense, for voucher: Voucher) -> Bool {
@@ -366,12 +391,12 @@ extension VoucherSharingManager {
         return didChange
     }
 
-    private func shareZoneID(for voucher: Voucher) async -> CKRecordZone.ID? {
-        if let storedZoneID = Self.storedShareZone(for: voucher.id) {
+    private func shareZoneID(for voucher: Voucher, voucherID: UUID) async -> CKRecordZone.ID? {
+        if let storedZoneID = Self.storedShareZone(for: voucherID) {
             return storedZoneID
         }
         if let share = try? await share(for: voucher.objectID) {
-            rememberShareZone(share.recordID.zoneID, for: voucher.id)
+            rememberShareZone(share.recordID.zoneID, for: voucherID)
             return share.recordID.zoneID
         }
         return nil

@@ -37,6 +37,17 @@ extension Expense {
     @nonobjc class func fetchRequest() -> NSFetchRequest<Expense> {
         NSFetchRequest<Expense>(entityName: "Expense")
     }
+
+    var safeID: UUID? {
+        guard managedObjectContext != nil, !isDeleted else { return nil }
+        if let value = primitiveValue(forKey: "id") as? UUID {
+            return value
+        }
+        if let value = primitiveValue(forKey: "id") as? NSUUID {
+            return value as UUID
+        }
+        return nil
+    }
 }
 
 @objc(PersonalVoucherPreference)

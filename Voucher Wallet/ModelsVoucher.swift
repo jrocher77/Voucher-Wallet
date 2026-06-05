@@ -44,7 +44,8 @@ final class Voucher: NSManagedObject, Identifiable {
     var activeExpensesList: [Expense] {
         var seenIDs = Set<UUID>()
         return Array(expenses ?? []).filter { expense in
-            seenIDs.insert(expense.id).inserted
+            guard let expenseID = expense.safeID else { return false }
+            return seenIDs.insert(expenseID).inserted
         }
     }
 

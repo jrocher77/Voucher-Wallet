@@ -246,6 +246,11 @@ extension VoucherSharingManager {
     }
 
     private func importSharedExpenseMirror(_ record: CKRecord, into voucher: Voucher) -> Bool {
+        guard isImportableSharedVoucher(voucher),
+              stringValue(record[SharedExpenseMirrorRecord.voucherID]) == voucher.id.uuidString else {
+            return false
+        }
+
         guard let expenseIDString = stringValue(record[SharedExpenseMirrorRecord.expenseID]),
               let expenseID = UUID(uuidString: expenseIDString) else {
             return false
@@ -262,18 +267,23 @@ extension VoucherSharingManager {
 
         let matchingExpenses = fetchExpenses(with: expenseID, in: context)
         let existing = preferredExistingExpense(from: matchingExpenses, for: voucher)
+        guard existing != nil || !isDeleted else {
+            return false
+        }
+
         let expense = existing ?? Expense(context: context, id: expenseID, amount: amount, date: date)
         if existing == nil {
             SharedModelContainer.assign(expense, toStoreOf: voucher)
             expense.voucher = voucher
-        } else if expense.voucher?.id != voucher.id {
-            SharedModelContainer.assign(expense, toStoreOf: voucher)
+        } else if expense.voucher == nil {
             expense.voucher = voucher
         }
 
         var didChange = existing == nil
         didChange = mergeDuplicateExpenses(
-            matchingExpenses.filter { $0.objectID != expense.objectID },
+            matchingExpenses.filter {
+                $0.objectID != expense.objectID && canMergeExpense($0, into: expense, for: voucher)
+            },
             into: expense,
             in: context
         ) || didChange
@@ -285,6 +295,13 @@ extension VoucherSharingManager {
         return didChange
     }
 
+    private func isImportableSharedVoucher(_ voucher: Voucher) -> Bool {
+        voucher.managedObjectContext != nil &&
+            !voucher.isDeleted &&
+            voucher.objectID.persistentStore != nil &&
+            voucher.isInActiveShare
+    }
+
     private func fetchExpenses(with id: UUID, in context: NSManagedObjectContext) -> [Expense] {
         let request = NSFetchRequest<Expense>(entityName: "Expense")
         request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
@@ -293,12 +310,26 @@ extension VoucherSharingManager {
 
     private func preferredExistingExpense(from expenses: [Expense], for voucher: Voucher) -> Expense? {
         expenses.first { expense in
-            expense.managedObjectContext != nil &&
-                !expense.isDeleted &&
+            isReusableExpense(expense, for: voucher) &&
                 expense.voucher?.id == voucher.id
         } ?? expenses.first { expense in
-            expense.managedObjectContext != nil && !expense.isDeleted
+            isReusableExpense(expense, for: voucher) &&
+                expense.voucher == nil
         }
+    }
+
+    private func isReusableExpense(_ expense: Expense, for voucher: Voucher) -> Bool {
+        guard expense.managedObjectContext != nil,
+              !expense.isDeleted,
+              expense.objectID.persistentStore == voucher.objectID.persistentStore else {
+            return false
+        }
+        return expense.voucher == nil || expense.voucher?.id == voucher.id
+    }
+
+    private func canMergeExpense(_ expense: Expense, into canonical: Expense, for voucher: Voucher) -> Bool {
+        isReusableExpense(expense, for: voucher) &&
+            expense.objectID.persistentStore == canonical.objectID.persistentStore
     }
 
     private func mergeDuplicateExpenses(

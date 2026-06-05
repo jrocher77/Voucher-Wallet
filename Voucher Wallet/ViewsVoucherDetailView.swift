@@ -42,7 +42,7 @@ struct VoucherDetailView: View {
             case .new:
                 return "new"
             case .edit(let expense):
-                return expense.id.uuidString
+                return expense.safeID?.uuidString ?? expense.objectID.uriRepresentation().absoluteString
             }
         }
     }

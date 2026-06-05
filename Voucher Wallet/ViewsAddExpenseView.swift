@@ -325,7 +325,7 @@ struct AddExpenseView: View {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             guard let voucherToDelete = try? modelContext.existingObject(with: objectID) as? Voucher else { return }
-            sharingManager.revokeIfNeeded(for: voucherToDelete)
+            let revokeShareAfterDeletion = sharingManager.makeShareRevocationAction(for: voucherToDelete)
             SharedModelContainer.rememberDeletedVoucherForLegacyMigration(voucherToDelete)
             voucherToDelete.deletePersonalPreference(in: modelContext)
             modelContext.delete(voucherToDelete)
@@ -334,6 +334,7 @@ struct AddExpenseView: View {
                 try modelContext.save()
                 debugLog("🗑️ Bon supprimé avec succès")
                 NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
+                revokeShareAfterDeletion?()
                 if wasFavorite {
                     WidgetReloader.reloadFavoriteVouchersWidget()
                 }

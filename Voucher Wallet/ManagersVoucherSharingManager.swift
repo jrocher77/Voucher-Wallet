@@ -619,27 +619,27 @@ final class VoucherSharingManager {
             message.contains("was cancelled because there is already")
     }
 
-    func revokeIfNeeded(for voucher: Voucher) {
-        guard let privateStore = persistence.privateStore else { return }
-        guard let voucherID = voucher.safeID else { return }
+    func makeShareRevocationAction(for voucher: Voucher) -> (() -> Void)? {
+        guard let privateStore = persistence.privateStore else { return nil }
+        guard let voucherID = voucher.safeID else { return nil }
         let zoneID = share(for: voucher)?.recordID.zoneID ?? Self.storedShareZone(for: voucherID)
-        guard let zoneID else { return }
+        guard let zoneID else { return nil }
 
-        voucher.sharingStartedAt = nil
-        try? persistence.container.viewContext.save()
-        NotificationCenter.default.post(name: .voucherDidChange, object: voucherID)
-        NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucherID)
-        persistence.container.purgeObjectsAndRecordsInZone(
-            with: zoneID,
-            in: privateStore
-        ) { _, error in
-            if let error {
-                debugLog("Erreur lors de la purge de la zone CloudKit du bon supprimé: \(error.localizedDescription)")
-            } else {
-                Self.forgetShareZone(for: voucherID)
-            }
-            Task { @MainActor in
-                WidgetReloader.reloadAllWidgets()
+        return { [weak self] in
+            guard let self else { return }
+            self.persistence.container.purgeObjectsAndRecordsInZone(
+                with: zoneID,
+                in: privateStore
+            ) { _, error in
+                if let error {
+                    debugLog("Erreur lors de la purge de la zone CloudKit du bon supprimé: \(error.localizedDescription)")
+                } else {
+                    Self.forgetShareZone(for: voucherID)
+                }
+                Task { @MainActor in
+                    NotificationCenter.default.post(name: .voucherSharingDidChange, object: voucherID)
+                    WidgetReloader.reloadAllWidgets()
+                }
             }
         }
     }

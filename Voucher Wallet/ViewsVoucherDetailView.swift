@@ -612,7 +612,7 @@ struct VoucherDetailView: View {
     
     private func deleteVoucher() {
         let objectID = voucher.objectID
-        let voucherID = voucher.id
+        guard let voucherID = voucher.safeID else { return }
         let wasFavorite = voucher.isFavorite
         isVoucherDeleted = true
         dismiss()
@@ -826,17 +826,22 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
                 favoriteRevision += 1
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherExpensesDidChange)) { notification in
-                guard notification.object as? UUID == voucher.id else { return }
+                guard let voucherID = voucher.safeID,
+                      notification.object as? UUID == voucherID else { return }
                 refresh(reloadExpenses: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
-                if let voucherID = notification.object as? UUID, voucherID != voucher.id {
+                if let notifiedVoucherID = notification.object as? UUID,
+                   let voucherID = voucher.safeID,
+                   notifiedVoucherID != voucherID {
                     return
                 }
                 refresh(reloadVoucher: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherSharingDidChange)) { notification in
-                if let voucherID = notification.object as? UUID, voucherID != voucher.id {
+                if let notifiedVoucherID = notification.object as? UUID,
+                   let voucherID = voucher.safeID,
+                   notifiedVoucherID != voucherID {
                     return
                 }
                 favoriteRevision += 1

@@ -97,11 +97,12 @@ struct ContentView: View {
                 !SharedModelContainer.isDeletedLegacyVoucher(voucher)
         }
         return uniqueObjects.reduce(into: [UUID: Voucher]()) { result, voucher in
-            guard let existing = result[voucher.id] else {
-                result[voucher.id] = voucher
+            guard let voucherID = voucher.safeID else { return }
+            guard let existing = result[voucherID] else {
+                result[voucherID] = voucher
                 return
             }
-            result[voucher.id] = Self.preferredVisibleVoucher(existing, voucher)
+            result[voucherID] = Self.preferredVisibleVoucher(existing, voucher)
         }.map(\.value)
     }
 
@@ -141,12 +142,13 @@ struct ContentView: View {
         let isReceivedShare: Bool
         let isInActiveShare: Bool
 
-        init(voucher: Voucher) {
+        init?(voucher: Voucher) {
+            guard let voucherID = voucher.safeID else { return nil }
             let activeExpenses = voucher.activeExpensesList
             let activeTotal = activeExpenses.reduce(0) { $0 + $1.amount }
             let amount = voucher.amount
 
-            self.id = voucher.id
+            self.id = voucherID
             self.voucher = voucher
             self.storeName = voucher.storeName
             self.voucherNumber = voucher.voucherNumber
@@ -184,7 +186,7 @@ struct ContentView: View {
     @MainActor
     private var voucherItems: [VoucherListItem] {
         _ = favoriteRevision
-        return vouchers.map(VoucherListItem.init)
+        return vouchers.compactMap(VoucherListItem.init)
     }
     
     @MainActor
@@ -934,7 +936,7 @@ struct ContentView: View {
     private func deleteVoucherPendingDeletion() {
         guard let voucher = voucherToDelete else { return }
         let objectID = voucher.objectID
-        let voucherID = voucher.id
+        guard let voucherID = voucher.safeID else { return }
         let wasFavorite = voucher.isFavorite
         voucherToDelete = nil
         navigationPath.removeLast(navigationPath.count)

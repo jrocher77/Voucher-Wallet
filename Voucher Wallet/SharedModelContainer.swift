@@ -127,10 +127,11 @@ final class SharedModelContainer {
     }
 
     static func rememberDeletedVoucherForLegacyMigration(_ voucher: Voucher) {
+        guard let voucherID = voucher.safeID else { return }
         let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
 
         var deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
-        deletedIDs.insert(voucher.id.uuidString)
+        deletedIDs.insert(voucherID.uuidString)
         defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
 
         if let key = legacyVoucherPrivacyKey(for: voucher.voucherNumber) {
@@ -143,10 +144,11 @@ final class SharedModelContainer {
     }
 
     static func forgetDeletedLegacyVoucherForUserImport(_ voucher: Voucher) {
+        guard let voucherID = voucher.safeID else { return }
         let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
 
         var deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
-        deletedIDs.remove(voucher.id.uuidString)
+        deletedIDs.remove(voucherID.uuidString)
         defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
 
         var deletedKeys = legacyVoucherPrivacyKeys(
@@ -161,6 +163,7 @@ final class SharedModelContainer {
 
     static func isDeletedLegacyVoucher(_ voucher: Voucher) -> Bool {
         guard shouldApplyDeletedLegacyFilter(to: voucher) else { return false }
+        guard let voucherID = voucher.safeID else { return false }
 
         let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
         let deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
@@ -168,7 +171,7 @@ final class SharedModelContainer {
             from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
         )
 
-        return deletedIDs.contains(voucher.id.uuidString) ||
+        return deletedIDs.contains(voucherID.uuidString) ||
             !legacyVoucherStorageLookupKeys(for: voucher.voucherNumber).isDisjoint(with: deletedKeys)
     }
 
@@ -573,7 +576,10 @@ final class SharedModelContainer {
                 )
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
-                    existingVouchers.map { ($0.id, $0) },
+                    existingVouchers.compactMap { voucher -> (UUID, Voucher)? in
+                        guard let voucherID = voucher.safeID else { return nil }
+                        return (voucherID, voucher)
+                    },
                     uniquingKeysWith: { existing, _ in existing }
                 )
                 var vouchersByLegacyKey = Dictionary(
@@ -590,15 +596,18 @@ final class SharedModelContainer {
                     deletedIDs: deletedLegacyVoucherIDs,
                     deletedKeys: deletedLegacyVoucherKeys
                 ) {
+                    let existingVoucherID = existingVoucher.safeID
                     existingVoucher.deletePersonalPreference(in: context)
                     context.delete(existingVoucher)
-                    vouchersByID.removeValue(forKey: existingVoucher.id)
+                    if let existingVoucherID {
+                        vouchersByID.removeValue(forKey: existingVoucherID)
+                    }
                     if let key = Self.legacyVoucherKey(for: existingVoucher) {
                         vouchersByLegacyKey.removeValue(forKey: key)
                     }
                 }
                 if !snapshots.isEmpty {
-                    let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).map(\.id))
+                    let expenseIDs = Set(try context.fetch(Expense.fetchRequest()).compactMap(\.safeID))
                     var importedExpenseIDs = expenseIDs
 
                     for snapshot in snapshots {
@@ -808,8 +817,9 @@ final class SharedModelContainer {
         deletedKeys: Set<String>
     ) -> Bool {
         guard shouldApplyDeletedLegacyFilter(to: voucher) else { return false }
+        guard let voucherID = voucher.safeID else { return false }
 
-        return deletedIDs.contains(voucher.id.uuidString) ||
+        return deletedIDs.contains(voucherID.uuidString) ||
             !legacyVoucherStorageLookupKeys(for: voucher.voucherNumber).isDisjoint(with: deletedKeys)
     }
 
@@ -933,8 +943,9 @@ final class SharedModelContainer {
             canonical.sortOrder = min(canonical.sortOrder, duplicate.sortOrder)
         }
 
-        let existingExpenseIDs = Set(canonical.activeExpensesList.map(\.id))
-        for expense in duplicate.activeExpensesList where !existingExpenseIDs.contains(expense.id) {
+        let existingExpenseIDs = Set(canonical.activeExpensesList.compactMap(\.safeID))
+        for expense in duplicate.activeExpensesList {
+            guard let expenseID = expense.safeID, !existingExpenseIDs.contains(expenseID) else { continue }
             expense.voucher = canonical
         }
     }
@@ -942,7 +953,7 @@ final class SharedModelContainer {
     private static func consolidatePersonalPreferences(in context: NSManagedObjectContext) {
         do {
             let vouchers = try context.fetch(Voucher.fetchRequest())
-            let existingVoucherIDs = Set(vouchers.filter { $0.managedObjectContext != nil && !$0.isDeleted }.map(\.id))
+            let existingVoucherIDs = Set(vouchers.compactMap(\.safeID))
             let preferences = try context.fetch(PersonalVoucherPreference.fetchRequest())
             let grouped = Dictionary(grouping: preferences, by: \.voucherID)
 

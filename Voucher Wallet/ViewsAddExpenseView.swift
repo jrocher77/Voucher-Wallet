@@ -42,7 +42,7 @@ struct AddExpenseView: View {
         onExpenseSaved: (() -> Void)? = nil
     ) {
         self.voucher = voucher
-        self.voucherID = voucher.id
+        self.voucherID = voucher.safeID ?? UUID()
         self.existingExpense = expense
         self.onVoucherDeleted = onVoucherDeleted
         self.onExpenseSaved = onExpenseSaved
@@ -291,8 +291,10 @@ struct AddExpenseView: View {
             if currentVoucher.isInActiveShare {
                 sharingManager.mirrorSharedExpense(savedExpense, for: currentVoucher)
             }
-            NotificationCenter.default.post(name: .voucherDidChange, object: currentVoucher.id)
-            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: currentVoucher.id)
+            if let currentVoucherID = currentVoucher.safeID {
+                NotificationCenter.default.post(name: .voucherDidChange, object: currentVoucherID)
+                NotificationCenter.default.post(name: .voucherExpensesDidChange, object: currentVoucherID)
+            }
             onExpenseSaved?()
             reloadFavoriteWidgetIfNeeded(for: currentVoucher)
             
@@ -312,7 +314,7 @@ struct AddExpenseView: View {
     
     private func deleteVoucher() {
         let objectID = voucher.objectID
-        let voucherID = voucher.id
+        guard let voucherID = voucher.safeID else { return }
         let wasFavorite = voucher.isFavorite
         isDeletingVoucher = true
         showingDeleteVoucherAlert = false

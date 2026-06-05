@@ -14,6 +14,7 @@ struct AddExpenseView: View {
     @Environment(\.managedObjectContext) private var modelContext
     
     let voucher: Voucher
+    private let voucherID: UUID
     var existingExpense: Expense? // Pour l'édition - pas @State !
     var onVoucherDeleted: (() -> Void)? // Callback pour informer la vue parente
     var onExpenseSaved: (() -> Void)?
@@ -28,6 +29,7 @@ struct AddExpenseView: View {
     @State private var pendingExpenseSave = false
     @State private var displayName = ""
     @State private var isDeletingVoucher = false
+    @State private var isVoucherUnavailable = false
     
     private var isEditing: Bool {
         existingExpense != nil
@@ -40,6 +42,7 @@ struct AddExpenseView: View {
         onExpenseSaved: (() -> Void)? = nil
     ) {
         self.voucher = voucher
+        self.voucherID = voucher.id
         self.existingExpense = expense
         self.onVoucherDeleted = onVoucherDeleted
         self.onExpenseSaved = onExpenseSaved
@@ -66,6 +69,11 @@ struct AddExpenseView: View {
     var body: some View {
         if isDeletingVoucher {
             Color.clear
+        } else if isVoucherUnavailable || !isVoucherUsable {
+            Color.clear
+                .onAppear {
+                    closeBecauseVoucherIsUnavailable()
+                }
         } else {
             NavigationStack {
             Form {
@@ -172,6 +180,19 @@ struct AddExpenseView: View {
             } message: {
                 Text("Votre nom sera affiché avec les dépenses de ce bon partagé.")
             }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
+                guard notification.object as? UUID == voucherID else { return }
+                guard resolvedVoucherForUse(processPendingChanges: true) != nil else {
+                    closeBecauseVoucherIsUnavailable()
+                    return
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
+                guard resolvedVoucherForUse(processPendingChanges: true) != nil else {
+                    closeBecauseVoucherIsUnavailable()
+                    return
+                }
+            }
         }
         }
     }
@@ -181,7 +202,8 @@ struct AddExpenseView: View {
     }
     
     private var adjustedBalance: Double {
-        (voucher.remainingBalance + (existingExpense?.amount ?? 0)).roundedToCurrencyCents
+        guard let currentVoucher = resolvedVoucherForUse() else { return 0 }
+        return (currentVoucher.remainingBalance + existingExpenseAmountForBalance).roundedToCurrencyCents
     }
 
     private var shouldShowAmountValidation: Bool {
@@ -189,6 +211,7 @@ struct AddExpenseView: View {
     }
     
     private var isFormValid: Bool {
+        guard resolvedVoucherForUse() != nil else { return false }
         guard let expenseAmount = parsedAmount else {
             return false
         }
@@ -198,7 +221,12 @@ struct AddExpenseView: View {
     }
     
     private func saveExpense() {
-        if voucher.isInActiveShare && sharingManager.storedDisplayName.isEmpty {
+        guard let currentVoucher = resolvedVoucherForUse(processPendingChanges: true) else {
+            closeBecauseVoucherIsUnavailable()
+            return
+        }
+
+        if currentVoucher.isInActiveShare && sharingManager.storedDisplayName.isEmpty {
             displayName = ""
             pendingExpenseSave = true
             showingIdentityPrompt = true
@@ -224,6 +252,12 @@ struct AddExpenseView: View {
         
         let savedExpense: Expense
         if let existing = existingExpense {
+            guard existing.managedObjectContext != nil, !existing.isDeleted else {
+                errorMessage = "Cette dépense n'est plus disponible."
+                showingError = true
+                return
+            }
+
             // Édition
             debugLog("🔄 Modification de la dépense existante")
             existing.amount = expenseAmount
@@ -240,12 +274,12 @@ struct AddExpenseView: View {
                 date: date,
                 note: note.isEmpty ? nil : note
             )
-            if voucher.isInActiveShare {
+            if currentVoucher.isInActiveShare {
                 expense.authorDisplayName = sharingManager.storedDisplayName
                 expense.authorRecordName = sharingManager.authorIdentifier
             }
-            SharedModelContainer.assign(expense, toStoreOf: voucher)
-            expense.voucher = voucher
+            SharedModelContainer.assign(expense, toStoreOf: currentVoucher)
+            expense.voucher = currentVoucher
             savedExpense = expense
             debugLog("   ✓ Nouvelle dépense créée")
         }
@@ -253,17 +287,17 @@ struct AddExpenseView: View {
         do {
             try modelContext.save()
             debugLog("💾 Dépense sauvegardée avec succès")
-            modelContext.refresh(voucher, mergeChanges: true)
-            if voucher.isInActiveShare {
-                sharingManager.mirrorSharedExpense(savedExpense, for: voucher)
+            modelContext.refresh(currentVoucher, mergeChanges: true)
+            if currentVoucher.isInActiveShare {
+                sharingManager.mirrorSharedExpense(savedExpense, for: currentVoucher)
             }
-            NotificationCenter.default.post(name: .voucherDidChange, object: voucher.id)
-            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: voucher.id)
+            NotificationCenter.default.post(name: .voucherDidChange, object: currentVoucher.id)
+            NotificationCenter.default.post(name: .voucherExpensesDidChange, object: currentVoucher.id)
             onExpenseSaved?()
-            reloadFavoriteWidgetIfNeeded()
+            reloadFavoriteWidgetIfNeeded(for: currentVoucher)
             
             // Vérifier si le solde est maintenant à 0
-            if voucher.remainingBalance == 0 && !voucher.isReceivedShare {
+            if currentVoucher.remainingBalance == 0 && !currentVoucher.isReceivedShare {
                 debugLog("⚠️ Le solde du bon est maintenant à 0")
                 showingDeleteVoucherAlert = true
             } else {
@@ -310,7 +344,41 @@ struct AddExpenseView: View {
         }
     }
     
-    private func reloadFavoriteWidgetIfNeeded() {
+    private var isVoucherUsable: Bool {
+        voucher.managedObjectContext != nil && !voucher.isDeleted
+    }
+
+    private var existingExpenseAmountForBalance: Double {
+        guard let existingExpense,
+              existingExpense.managedObjectContext != nil,
+              !existingExpense.isDeleted else {
+            return 0
+        }
+        return existingExpense.amount
+    }
+
+    private func resolvedVoucherForUse(processPendingChanges: Bool = false) -> Voucher? {
+        if processPendingChanges {
+            modelContext.processPendingChanges()
+        }
+        guard isVoucherUsable,
+              let currentVoucher = try? modelContext.existingObject(with: voucher.objectID) as? Voucher,
+              currentVoucher.managedObjectContext != nil,
+              !currentVoucher.isDeleted else {
+            return nil
+        }
+        return currentVoucher
+    }
+
+    private func closeBecauseVoucherIsUnavailable() {
+        pendingExpenseSave = false
+        isVoucherUnavailable = true
+        errorMessage = "Ce bon n'est plus disponible."
+        onVoucherDeleted?()
+        dismiss()
+    }
+
+    private func reloadFavoriteWidgetIfNeeded(for voucher: Voucher) {
         guard voucher.isFavorite else { return }
         WidgetReloader.reloadFavoriteVouchersWidget()
     }

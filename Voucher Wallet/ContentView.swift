@@ -324,7 +324,7 @@ struct ContentView: View {
                 guard let voucherID = newValue else { return }
                 
                 // Trouver le voucher correspondant
-                if let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                if let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
                     // Naviguer vers le détail
                     navigationPath.append(voucher)
                     
@@ -405,7 +405,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherDidChange)) { notification in
                 if let voucherID = notification.object as? UUID,
-                   let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                   let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
                     modelContext.refresh(voucher, mergeChanges: false)
                 } else {
                     refreshVisibleVouchers()
@@ -415,7 +415,7 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherExpensesDidChange)) { notification in
                 if let voucherID = notification.object as? UUID,
-                   let voucher = vouchers.first(where: { $0.id == voucherID }) {
+                   let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
                     modelContext.refresh(voucher, mergeChanges: false)
                 } else {
                     refreshVisibleVouchers()
@@ -526,7 +526,9 @@ struct ContentView: View {
             receivedSharedVouchers = try modelContext.fetch(request).filter { voucher in
                 voucher.managedObjectContext != nil &&
                     !voucher.isDeleted &&
-                    !SharedModelContainer.isDeletedLegacyVoucher(voucher)
+                    !SharedModelContainer.isDeletedLegacyVoucher(voucher) &&
+                    voucher.safeID != nil &&
+                    sharingManager.share(for: voucher) != nil
             }
             receivedShareRevision += 1
             debugLog("Wallet partagé relu (\(reason)): \(receivedSharedVouchers.count) bon(s)")
@@ -810,6 +812,13 @@ struct ContentView: View {
     private func voucherRow(_ item: VoucherListItem, isFavoriteSection: Bool) -> some View {
         let row = ZStack(alignment: .topLeading) {
             Button {
+                guard item.voucher.managedObjectContext != nil,
+                      !item.voucher.isDeleted,
+                      item.voucher.safeID != nil,
+                      !item.voucher.isReceivedShare || sharingManager.share(for: item.voucher) != nil else {
+                    refreshVisibleVouchers(reason: "ignored-unavailable-voucher-tap")
+                    return
+                }
                 navigationPath.append(item.voucher)
             } label: {
                 VoucherCardView(item: item.cardItem, showsFavoriteIcon: false)

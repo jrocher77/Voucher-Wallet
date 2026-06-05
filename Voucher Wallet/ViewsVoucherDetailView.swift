@@ -213,7 +213,7 @@ struct VoucherDetailView: View {
                 // Restaurer la luminosité quand l'app passe en arrière-plan
                 if newPhase == .background || newPhase == .inactive {
                     restoreBrightness()
-                } else if newPhase == .active && voucher.isInActiveShare {
+                } else if newPhase == .active && isCurrentVoucherUsableForSharedRefresh {
                     sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
                     refreshSharedExpenseMirrorsInBackground(reason: "detail-scene-active")
                 }
@@ -546,7 +546,7 @@ struct VoucherDetailView: View {
     
     @MainActor
     private func refreshSharedVoucherFromPull() async {
-        guard voucher.isInActiveShare else { return }
+        guard isCurrentVoucherUsableForSharedRefresh else { return }
         sharingManager.persistence.requestCloudRefresh(minimumInterval: 0)
         sharingManager.persistence.scheduleCloudRefreshes(delays: [1.0, 3.0])
         _ = await sharingManager.refreshSharedExpenseMirrors(
@@ -557,9 +557,10 @@ struct VoucherDetailView: View {
     }
 
     private func refreshSharedExpenseMirrorsInBackground(reason: String) {
-        guard voucher.isInActiveShare else { return }
+        guard isCurrentVoucherUsableForSharedRefresh else { return }
 
         Task { @MainActor in
+            guard isCurrentVoucherUsableForSharedRefresh else { return }
             let mirroredChanges = await sharingManager.refreshSharedExpenseMirrors(
                 for: [voucher],
                 retryDelays: [1.0, 3.0, 6.0]
@@ -587,6 +588,14 @@ struct VoucherDetailView: View {
         if reloadVoucher {
             voucherRevision += 1
         }
+    }
+
+    private var isCurrentVoucherUsableForSharedRefresh: Bool {
+        voucher.managedObjectContext != nil &&
+            !voucher.isDeleted &&
+            voucher.safeID != nil &&
+            voucher.isInActiveShare &&
+            (!voucher.isReceivedShare || sharingManager.share(for: voucher) != nil)
     }
 
     private func generateCodeImage() -> UIImage? {
@@ -848,8 +857,9 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
                 refresh(reloadVoucher: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .voucherRemoteStoreDidChange)) { _ in
-                guard voucher.isInActiveShare else { return }
+                guard isCurrentVoucherUsableForSharedRefresh else { return }
                 Task { @MainActor in
+                    guard isCurrentVoucherUsableForSharedRefresh else { return }
                     _ = await sharingManager.refreshSharedExpenseMirrors(
                         for: [voucher],
                         retryDelays: [1.0, 3.0, 6.0]
@@ -861,13 +871,13 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
 
     private func refresh(reloadExpenses: Bool = false, reloadVoucher: Bool = false) {
         modelContext.processPendingChanges()
-        if voucher.isDeleted || voucher.managedObjectContext == nil {
+        if !isCurrentVoucherUsableForDisplay {
             isVoucherDeleted = true
             return
         }
         modelContext.refresh(voucher, mergeChanges: true)
         sharingManager.reconcileSharingStates()
-        if voucher.isDeleted || voucher.managedObjectContext == nil {
+        if !isCurrentVoucherUsableForDisplay {
             isVoucherDeleted = true
             return
         }
@@ -877,6 +887,17 @@ private struct VoucherDetailRefreshEvents: ViewModifier {
         if reloadVoucher {
             voucherRevision += 1
         }
+    }
+
+    private var isCurrentVoucherUsableForDisplay: Bool {
+        voucher.managedObjectContext != nil &&
+            !voucher.isDeleted &&
+            voucher.safeID != nil &&
+            (!voucher.isReceivedShare || sharingManager.share(for: voucher) != nil)
+    }
+
+    private var isCurrentVoucherUsableForSharedRefresh: Bool {
+        isCurrentVoucherUsableForDisplay && voucher.isInActiveShare
     }
 }
 

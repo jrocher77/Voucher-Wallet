@@ -7,6 +7,9 @@ import CloudKit
 @preconcurrency import CoreData
 import CryptoKit
 import Foundation
+#if !WIDGET_EXTENSION
+import UIKit
+#endif
 
 /// Conteneur Core Data/CloudKit commun à l'application et au widget.
 final class SharedModelContainer {
@@ -1127,6 +1130,12 @@ final class CloudSyncCoordinator: @unchecked Sendable {
         }
 
         cloudSyncLog("Historique persistant fusionné (\(reason)): \(mergeResult.transactionCount) transaction(s)")
+#if !WIDGET_EXTENSION
+        guard UIApplication.shared.applicationState == .active else {
+            cloudSyncLog("Notification UI différée: app inactive (\(reason))")
+            return
+        }
+#endif
         NotificationCenter.default.post(
             name: Notification.Name("voucherRemoteStoreDidChange"),
             object: nil,

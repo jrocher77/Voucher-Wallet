@@ -113,7 +113,7 @@
             <key>Key</key>
             <string>version_preference</string>
             <key>DefaultValue</key>
-            <string>2.0.2</string>
+            <string>2.3.0</string>
         </dict>
     </array>
 </dict>

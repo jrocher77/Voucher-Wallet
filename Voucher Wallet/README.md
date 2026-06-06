@@ -499,7 +499,7 @@ Ce projet est un exemple éducatif.
 
 **Développé par** : JEREMY  
 **Date de création** : Avril 2026  
-**Version actuelle** : 2.0.2
+**Version actuelle** : 2.3.0
 **Statut** : ✅ Production Ready
 
 ---

@@ -198,7 +198,7 @@ class VoucherImportViewModel {
     func importSelectedVouchers(
         to modelContext: NSManagedObjectContext,
         pdfData: Data
-    ) throws -> Int {
+    ) throws -> [UUID] {
         let selectedVouchers = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
         
         let colorHex = globalCardColor.toHex()
@@ -206,6 +206,7 @@ class VoucherImportViewModel {
         var nextSortOrder = getNextSortOrder(in: modelContext)
         
         var importedCount = 0
+        var importedVoucherIDs: [UUID] = []
         
         for detectedVoucher in selectedVouchers {
             // Générer le code-barres/QR code
@@ -231,6 +232,9 @@ class VoucherImportViewModel {
                 textColor: textColorHex
             )
             SharedModelContainer.forgetDeletedLegacyVoucherForUserImport(voucher)
+            if let voucherID = voucher.safeID {
+                importedVoucherIDs.append(voucherID)
+            }
             
             // Apprentissage automatique
             if let storeName = detectedVoucher.storeName {
@@ -246,7 +250,7 @@ class VoucherImportViewModel {
         try modelContext.save()
         debugLog("✅ \(importedCount) bon(s) importé(s)")
         
-        return importedCount
+        return importedVoucherIDs
     }
     
     /// Importe un seul bon avec des paramètres personnalisés
@@ -272,7 +276,7 @@ class VoucherImportViewModel {
         textColor: Color,
         pdfData: Data,
         to modelContext: NSManagedObjectContext
-    ) throws {
+    ) throws -> UUID {
         // Générer le code
         let codeImage: UIImage?
         if codeType == .qrCode {
@@ -308,6 +312,7 @@ class VoucherImportViewModel {
         
         try modelContext.save()
         debugLog("✅ Bon importé: \(storeName)")
+        return voucher.safeID ?? voucher.id
     }
 
     private func getNextSortOrder(in modelContext: NSManagedObjectContext) -> Int {

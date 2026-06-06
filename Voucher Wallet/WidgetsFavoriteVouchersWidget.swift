@@ -34,7 +34,6 @@ struct OpenVoucherIntent: AppIntent {
         // Stocker l'ID dans UserDefaults partagé
         if let userDefaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) {
             userDefaults.set(voucherID, forKey: "selectedVoucherID")
-            userDefaults.synchronize()
             debugLog("✅ Voucher ID stocké dans l'App Group")
         }
         
@@ -71,7 +70,7 @@ struct FavoriteVouchersEntry: TimelineEntry {
 struct VoucherSnapshot: Identifiable {
     let id: UUID
     let storeName: String
-    let remainingBalance: Double
+    let remainingBalance: Double?
     let originalAmount: Double?
     let totalExpenses: Double
     let storeColor: String
@@ -145,7 +144,7 @@ struct FavoriteVouchersProvider: TimelineProvider {
     
     func getTimeline(in context: Context, completion: @escaping (Timeline<FavoriteVouchersEntry>) -> Void) {
         let currentDate = Date()
-        let vouchers = fetchFavoriteVouchers()
+        let vouchers = context.isPreview ? placeholder(in: context).vouchers : fetchFavoriteVouchers()
         
         let entry = FavoriteVouchersEntry(
             date: currentDate,
@@ -195,7 +194,7 @@ struct FavoriteVouchersProvider: TimelineProvider {
                 return VoucherSnapshot(
                     id: voucherID,
                     storeName: voucher.storeName,
-                    remainingBalance: voucher.remainingBalance,
+                    remainingBalance: voucher.amount.map { _ in voucher.remainingBalance },
                     originalAmount: voucher.amount,
                     totalExpenses: voucher.totalExpenses,
                     storeColor: voucher.storeColor,
@@ -429,26 +428,28 @@ struct WidgetVoucherCardView: View {
                 
                 Spacer(minLength: 0)
                 
-                // Solde restant
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Solde")
-                        .font(.system(.caption2, design: .rounded))
-                        .fontWeight(.bold)
-                        .foregroundStyle(Color(hex: voucher.textColor).opacity(0.8))
-                    
-                    Text(formatCurrency(voucher.remainingBalance))
-                        .font(.system(.title3, design: .rounded))
-                        .fontWeight(.bold)
-                        .foregroundStyle(Color(hex: voucher.textColor))
-                        .minimumScaleFactor(0.8)
-                        .lineLimit(1)
-
-                    if voucher.totalExpenses > 0, let originalAmount = voucher.originalAmount {
-                        Text("sur \(formatCurrency(originalAmount))")
+                if let remainingBalance = voucher.remainingBalance {
+                    // Solde restant
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Solde")
                             .font(.system(.caption2, design: .rounded))
-                            .foregroundStyle(Color(hex: voucher.textColor).opacity(0.75))
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color(hex: voucher.textColor).opacity(0.8))
+
+                        Text(formatCurrency(remainingBalance))
+                            .font(.system(.title3, design: .rounded))
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color(hex: voucher.textColor))
+                            .minimumScaleFactor(0.8)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+
+                        if voucher.totalExpenses > 0, let originalAmount = voucher.originalAmount {
+                            Text("sur \(formatCurrency(originalAmount))")
+                                .font(.system(.caption2, design: .rounded))
+                                .foregroundStyle(Color(hex: voucher.textColor).opacity(0.75))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
                     }
                 }
                 

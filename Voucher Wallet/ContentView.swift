@@ -38,6 +38,8 @@ struct ContentView: View {
     @State private var lastCloudSyncBannerDate = Date.distantPast
     @State private var remoteTransactionRevision = 0
     @State private var sharingStatusToken = UUID()
+    @State private var pendingFocusedVoucherID: UUID?
+    @State private var focusedVoucherScrollRequest = 0
     @State private var receivedSharedVouchers: [Voucher] = []
     @State private var receivedShareRevision = 0
     @State private var unavailableReceivedShareIDs = Set<UUID>()
@@ -291,7 +293,7 @@ struct ContentView: View {
                 }
             }
             .sheet(isPresented: $showingAddVoucher) {
-                AddVoucherView()
+                AddVoucherView(onVoucherAdded: focusVoucher)
             }
             .sheet(item: $voucherToEdit) { voucher in
                 EditVoucherView(voucher: voucher)
@@ -313,7 +315,11 @@ struct ContentView: View {
                 }}
             )) {
                 if let pdfData = urlHandler.pdfData {
-                    AddVoucherView(initialPDFData: pdfData, allowsManualEntry: false)
+                    AddVoucherView(
+                        initialPDFData: pdfData,
+                        allowsManualEntry: false,
+                        onVoucherAdded: focusVoucher
+                    )
                 }
             }
             .onChange(of: urlHandler.shouldShowImport) { oldValue, newValue in
@@ -625,44 +631,57 @@ struct ContentView: View {
     private var voucherListView: some View {
         let sections = walletSections
 
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                if canReorder || !sections.favorites.isEmpty {
-                    sectionHeader("Mes bons d'achat favoris", isFavoriteSection: true)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    if canReorder || !sections.favorites.isEmpty {
+                        sectionHeader("Mes bons d'achat favoris", isFavoriteSection: true)
 
-                    if sections.favorites.isEmpty {
-                        sectionDropHint(
-                            "Glissez un bon ici pour l'ajouter aux favoris",
-                            isFavoriteSection: true
-                        )
+                        if sections.favorites.isEmpty {
+                            sectionDropHint(
+                                "Glissez un bon ici pour l'ajouter aux favoris",
+                                isFavoriteSection: true
+                            )
+                        }
+
+                        ForEach(sections.favorites) { item in
+                            voucherRow(item, isFavoriteSection: true)
+                                .background(focusedVoucherAnchor(for: item))
+                                .id("\(item.id)-favorite-\(item.isFavorite)")
+                        }
                     }
 
-                    ForEach(sections.favorites) { item in
-                        voucherRow(item, isFavoriteSection: true)
+                    if canReorder || !sections.others.isEmpty {
+                        sectionHeader("Mes autres bons d'achat", isFavoriteSection: false)
+
+                        if sections.others.isEmpty {
+                            sectionDropHint(
+                                "Glissez un bon ici pour le retirer des favoris",
+                                isFavoriteSection: false
+                            )
+                        }
+
+                        ForEach(sections.others) { item in
+                            voucherRow(item, isFavoriteSection: false)
+                                .background(focusedVoucherAnchor(for: item))
+                                .id("\(item.id)-other-\(item.isFavorite)")
+                        }
                     }
                 }
-
-                if canReorder || !sections.others.isEmpty {
-                    sectionHeader("Mes autres bons d'achat", isFavoriteSection: false)
-
-                    if sections.others.isEmpty {
-                        sectionDropHint(
-                            "Glissez un bon ici pour le retirer des favoris",
-                            isFavoriteSection: false
-                        )
-                    }
-
-                    ForEach(sections.others) { item in
-                        voucherRow(item, isFavoriteSection: false)
-                    }
-                }
+                .padding()
             }
-            .padding()
-            .animation(favoriteChangeAnimation, value: sections.favorites.map(\.id))
-            .animation(favoriteChangeAnimation, value: sections.others.map(\.id))
-        }
-        .refreshable {
-            await refreshSharedVouchersFromPull()
+            .refreshable {
+                await refreshSharedVouchersFromPull()
+            }
+            .onAppear {
+                scrollToPendingFocusedVoucher(using: proxy)
+            }
+            .onChange(of: focusedVoucherScrollRequest) { _, _ in
+                scrollToPendingFocusedVoucher(using: proxy)
+            }
+            .onChange(of: filteredVoucherItems.map(\.id)) { _, _ in
+                scrollToPendingFocusedVoucher(using: proxy)
+            }
         }
     }
 
@@ -857,6 +876,13 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private func focusedVoucherAnchor(for item: VoucherListItem) -> some View {
+        Color.clear
+            .frame(height: 0)
+            .id(item.id)
+    }
+
+    @ViewBuilder
     private func voucherRow(_ item: VoucherListItem, isFavoriteSection: Bool) -> some View {
         let row = ZStack(alignment: .topLeading) {
             Button {
@@ -871,7 +897,7 @@ struct ContentView: View {
                 navigationPath.append(item.voucher)
             } label: {
                 VoucherCardView(item: item.cardItem, showsFavoriteIcon: false)
-                    .id("\(item.id)-\(favoriteRevision)")
+                    .id("\(item.id)-card-\(item.isFavorite)")
             }
             .buttonStyle(.plain)
 
@@ -895,7 +921,6 @@ struct ContentView: View {
             .padding(.top, 12)
             .zIndex(1)
         }
-        .transition(.opacity.combined(with: .move(edge: .top)))
         .contextMenu {
             voucherContextMenu(for: item.voucher)
         }
@@ -963,6 +988,24 @@ struct ContentView: View {
         }
     }
 
+    private func focusVoucher(_ voucherID: UUID) {
+        pendingFocusedVoucherID = voucherID
+        focusedVoucherScrollRequest += 1
+    }
+
+    private func scrollToPendingFocusedVoucher(using proxy: ScrollViewProxy) {
+        guard let voucherID = pendingFocusedVoucherID else { return }
+        guard filteredVoucherItems.contains(where: { $0.id == voucherID }) else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            guard pendingFocusedVoucherID == voucherID else { return }
+            withAnimation(favoriteChangeAnimation) {
+                proxy.scrollTo(voucherID, anchor: .center)
+            }
+            pendingFocusedVoucherID = nil
+        }
+    }
+
     private func toggleFavorite(_ voucher: Voucher) {
         let manager: FavoritesManager
         if let existingManager = favoritesManager {
@@ -983,6 +1026,9 @@ struct ContentView: View {
         switch result {
         case .added, .removed:
             generator.impactOccurred()
+            if let voucherID = voucher.safeID {
+                focusVoucher(voucherID)
+            }
             WidgetReloader.reloadFavoriteVouchersWidget()
         case .limitReached:
             showingFavoriteLimitAlert = true

@@ -409,45 +409,79 @@ class PDFAnalyzer {
     /// Extrait les numéros de bons possibles (séquences de chiffres/lettres)
     private static func extractVoucherNumbers(from text: String) -> [String] {
         var numbers: [String] = []
-        
-        // Pattern 1: 10+ chiffres consécutifs
+
+        func addCandidate(_ rawValue: String, label: String) {
+            let value = rawValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " ", with: "")
+
+            guard value.count >= 6 else { return }
+            guard value.range(of: #"^[A-Z0-9-]+$"#, options: .regularExpression) != nil else { return }
+            guard !numbers.contains(value) else { return }
+
+            numbers.append(value)
+            debugLog("🔢 Numéro détecté (pattern '\(label)')")
+        }
+
+        func addMatches(pattern: String, groupIndex: Int, label: String) {
+            let nsText = text as NSString
+            let fullRange = NSRange(location: 0, length: nsText.length)
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return
+            }
+
+            for match in regex.matches(in: text, range: fullRange) {
+                let range = match.range(at: groupIndex)
+                guard range.location != NSNotFound else { continue }
+                addCandidate(nsText.substring(with: range).uppercased(), label: label)
+            }
+        }
+
+        // Pattern 1: libellés explicites. Couvre les codes mixtes comme Zalando
+        // (ex: "Votre code: P3JCW3NVDLUJVR3F").
+        addMatches(
+            pattern: #"\b(?:Votre\s+code|Code\s+bon|Code\s+carte|Num[eé]ro\s+(?:du\s+)?(?:bon|carte))\s*[:：]\s*([A-Z0-9][A-Z0-9-]{5,39})\b"#,
+            groupIndex: 1,
+            label: "code libellé"
+        )
+
+        // Pattern 2: 10+ chiffres consécutifs
         let digitPattern = #/\d{10,}/#
         let digitMatches = text.matches(of: digitPattern)
         for match in digitMatches {
-            numbers.append(String(match.0))
+            addCandidate(String(match.0), label: "chiffres longs")
         }
         
-        // Pattern 2: Format avec tirets (XXXX-XXXX-XXXX)
+        // Pattern 3: Format avec tirets (XXXX-XXXX-XXXX)
         let dashPattern = #/[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4,}/#
         let dashMatches = text.matches(of: dashPattern)
         for match in dashMatches {
-            numbers.append(String(match.0))
+            addCandidate(String(match.0), label: "format tirets")
         }
         
-        // Pattern 3: Code alphanumérique (lettres + 6+ chiffres)
+        // Pattern 4: Code alphanumérique (lettres + 6+ chiffres)
         let alphaPattern = #/[A-Z]{2,}[0-9]{6,}/#
         let alphaMatches = text.matches(of: alphaPattern)
         for match in alphaMatches {
-            numbers.append(String(match.0))
+            addCandidate(String(match.0), label: "alphanumérique")
         }
         
-        // Pattern 4: Codes EAN-13 (13 chiffres)
+        // Pattern 5: Codes EAN-13 (13 chiffres)
         let ean13Pattern = #/\b\d{13}\b/#
         let ean13Matches = text.matches(of: ean13Pattern)
         for match in ean13Matches {
-            numbers.append(String(match.0))
+            addCandidate(String(match.0), label: "EAN-13")
         }
         
-        // Pattern 5: Séquences de 8-9 chiffres (codes courts)
+        // Pattern 6: Séquences de 8-9 chiffres (codes courts)
         let shortPattern = #/\b\d{8,9}\b/#
         let shortMatches = text.matches(of: shortPattern)
         for match in shortMatches {
-            numbers.append(String(match.0))
+            addCandidate(String(match.0), label: "code court")
         }
-        
-        let uniqueNumbers = Array(Set(numbers))
-        debugLog("🔢 \(uniqueNumbers.count) numéro(s) extrait(s) du texte")
-        return uniqueNumbers
+
+        debugLog("🔢 \(numbers.count) numéro(s) extrait(s) du texte")
+        return numbers
     }
     
     /// Extrait les codes PIN possibles (chiffres ou lettres quand le libellé est explicite)
@@ -694,11 +728,49 @@ class PDFAnalyzer {
             .first {
             return (bestKnownStore.name, bestKnownStore.confidence, .knownStore)
         }
+
+        // 2. Recherche dans les libellés propres aux bons ("VOTRE E-BILLET ...",
+        // "VOTRE E-CARTE CADEAU ..."). Ces lignes désignent généralement le marchand,
+        // contrairement à l'en-tête qui peut contenir l'émetteur du PDF.
+        if let titleCandidate = detectStoreNameFromVoucherTitle(in: lines) {
+            debugLog("🏪 Enseigne trouvée dans le titre du bon: \(titleCandidate)")
+
+            var context = StoreNameLearning.DetectionContext()
+            context.isInFirstLines = lines.prefix(8).contains { $0.localizedCaseInsensitiveContains(titleCandidate) }
+            context.isAllUppercase = titleCandidate == titleCandidate.uppercased()
+            context.hasMatchingURL = hasMatchingURL(for: titleCandidate, in: uppercasedText)
+
+            if let validatedName = learning.findValidatedName(for: titleCandidate) {
+                let confidence = learning.calculateConfidenceScore(
+                    for: validatedName,
+                    detectionMethod: .learnedStore,
+                    context: context
+                )
+
+                debugLog("  🔗 Nom validé trouvé: \(validatedName)")
+                debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+                return (validatedName, confidence, .learnedStore)
+            }
+
+            let confidence = learning.calculateConfidenceScore(
+                for: titleCandidate,
+                detectionMethod: .labeledStore,
+                context: context
+            )
+
+            debugLog("  📊 Score de confiance: \(String(format: "%.0f%%", confidence * 100))")
+            return (titleCandidate, confidence, .labeledStore)
+        }
         
-        // 2. Recherche dans les enseignes apprises
+        // 3. Recherche dans les enseignes apprises
         var learnedStoreCandidates: [(name: String, confidence: Double)] = []
         let learnedStores = learning.getLearnedStoreNames()
         for storeName in learnedStores {
+            guard !isIgnoredIssuerName(storeName) else {
+                debugLog("⏭️ Enseigne apprise ignorée car identifiée comme émetteur: \(storeName)")
+                continue
+            }
+
             if containsStoreName(storeName, in: text) {
                 debugLog("🏪 Enseigne apprise trouvée: \(storeName)")
                 if let matchedLine = firstMatchingLine(for: storeName, in: text) {
@@ -738,7 +810,7 @@ class PDFAnalyzer {
             return (bestLearnedStore.name, bestLearnedStore.confidence, .learnedStore)
         }
         
-        // 3. Recherche de variations courantes
+        // 4. Recherche de variations courantes
         let variations = [
             "E.LECLERC": "Leclerc",
             "E LECLERC": "Leclerc",
@@ -770,7 +842,7 @@ class PDFAnalyzer {
             }
         }
         
-        // 4. Détection intelligente par heuristiques
+        // 5. Détection intelligente par heuristiques
         if let (detectedName, method, detectionContext) = detectStoreNameByHeuristics(from: text) {
             debugLog("🏪 Enseigne détectée par heuristique: \(detectedName)")
             
@@ -838,6 +910,107 @@ class PDFAnalyzer {
         let range = NSRange(text.startIndex..., in: text)
         return regex.numberOfMatches(in: text, options: [], range: range)
     }
+
+    /// Extrait le marchand à partir des titres standard des bons d'achat.
+    private static func detectStoreNameFromVoucherTitle(in lines: [String]) -> String? {
+        let titlePatterns = [
+            #"(?i)\bVOTRE\s+E?[-\s]?(?:CARTE\s+CADEAU|BILLET|BON|CHEQUE|CHÈQUE)\s+(.+)$"#,
+            #"(?i)\bComment\s+utiliser\s+m(?:on|a)\s+E?[-\s]?(?:CARTE\s+CADEAU|BILLET|BON|CHEQUE|CHÈQUE)\s+(.+?)[\s?]*$"#
+        ]
+
+        for line in lines {
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLine.isEmpty else { continue }
+
+            for pattern in titlePatterns {
+                guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+                let nsLine = trimmedLine as NSString
+                let range = NSRange(location: 0, length: nsLine.length)
+
+                guard let match = regex.firstMatch(in: trimmedLine, range: range),
+                      match.numberOfRanges > 1 else {
+                    continue
+                }
+
+                let rawCandidate = nsLine.substring(with: match.range(at: 1))
+                if let candidate = cleanStoreNameCandidate(rawCandidate) {
+                    return candidate
+                }
+            }
+        }
+
+        return nil
+    }
+
+    /// Nettoie un candidat marchand sans l'ajouter à la liste des enseignes connues.
+    private static func cleanStoreNameCandidate(_ rawCandidate: String) -> String? {
+        var candidate = rawCandidate
+            .replacingOccurrences(of: #"(?i)\bN[°º]\s*[A-Z0-9-]+\b"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"(?i)\bINCLUS\b.*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        candidate = candidate.trimmingCharacters(in: CharacterSet(charactersIn: " .:-–—?"))
+        candidate = candidate.replacingOccurrences(
+            of: #"(?i)^(?:DE|DU|DES|D'|L'|LA|LE|LES)\s+"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        guard candidate.count >= 2 && candidate.count <= 60 else { return nil }
+        guard candidate.rangeOfCharacter(from: .letters) != nil else { return nil }
+        guard !isIgnoredIssuerName(candidate) else { return nil }
+
+        return canonicalStoreName(for: candidate)
+    }
+
+    /// Normalise les formes OCR courantes vers les noms déjà utilisés par l'app.
+    private static func canonicalStoreName(for candidate: String) -> String {
+        let normalized = candidate
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+            .replacingOccurrences(of: "&", with: " ET ")
+            .replacingOccurrences(of: #"[^A-Z0-9]+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if normalized.contains("NATURE") && normalized.contains("DECOUVERTE") {
+            return "Nature et Decouvertes"
+        }
+
+        return formatStoreName(candidate)
+    }
+
+    /// Certains noms présents dans les PDFs Reduc Factory décrivent l'émetteur ou le support,
+    /// pas l'enseigne où le bon est utilisé.
+    private static func isIgnoredIssuerName(_ name: String) -> Bool {
+        let normalized = name
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+            .replacingOccurrences(of: #"[^A-Z0-9]+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let ignoredNames = [
+            "REDUC FACTORY",
+            "QWERTYS"
+        ]
+
+        return ignoredNames.contains(normalized)
+    }
+
+    private static func hasMatchingURL(for storeName: String, in uppercasedText: String) -> Bool {
+        let normalizedStoreName = storeName
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+            .replacingOccurrences(of: #"[^A-Z0-9]+"#, with: "", options: .regularExpression)
+
+        let normalizedText = uppercasedText
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+            .replacingOccurrences(of: #"[^A-Z0-9.]+"#, with: "", options: .regularExpression)
+
+        return normalizedText.contains("WWW.\(normalizedStoreName)")
+            || normalizedText.contains("\(normalizedStoreName).FR")
+            || normalizedText.contains("\(normalizedStoreName).COM")
+    }
     
     /// Détecte le nom de l'enseigne en utilisant des heuristiques intelligentes
     /// - Returns: Tuple contenant le nom, la méthode et le contexte de détection
@@ -859,10 +1032,11 @@ class PDFAnalyzer {
                trimmedLine.rangeOfCharacter(from: .letters) != nil {
                 // Vérifier que ce n'est pas un mot générique
                 let genericWords = ["BON", "CADEAU", "CHEQUE", "CARTE", "VOUCHER", "GIFT", "CARD", "CODE"]
-                if !genericWords.contains(where: { trimmedLine.contains($0) }) {
+                if !genericWords.contains(where: { trimmedLine.contains($0) }),
+                   !isIgnoredIssuerName(trimmedLine) {
                     debugLog("  → Candidat ligne \(index + 1) (majuscules): \(trimmedLine)")
                     context.isAllUppercase = true
-                    return (formatStoreName(trimmedLine), .uppercaseLine, context)
+                    return (canonicalStoreName(for: trimmedLine), .uppercaseLine, context)
                 }
             }
             
@@ -870,9 +1044,10 @@ class PDFAnalyzer {
             if index == 0 && trimmedLine.count >= 3 {
                 let words = trimmedLine.split(separator: " ")
                 // Si c'est 1-3 mots, probablement le nom
-                if words.count <= 3 && words.allSatisfy({ $0.count >= 2 }) {
+                if words.count <= 3 && words.allSatisfy({ $0.count >= 2 }),
+                   !isIgnoredIssuerName(trimmedLine) {
                     debugLog("  → Candidat première ligne: \(trimmedLine)")
-                    return (formatStoreName(trimmedLine), .firstLine, context)
+                    return (canonicalStoreName(for: trimmedLine), .firstLine, context)
                 }
             }
         }
@@ -885,10 +1060,11 @@ class PDFAnalyzer {
             let domain = String(match.1)
             // Exclure les domaines génériques
             let genericDomains = ["carte", "cadeau", "bon", "voucher", "gift"]
-            if !genericDomains.contains(domain.lowercased()) {
+            if !genericDomains.contains(domain.lowercased()),
+               !isIgnoredIssuerName(domain) {
                 debugLog("  → Candidat depuis URL: \(domain)")
                 context.hasMatchingURL = true
-                return (formatStoreName(domain), .urlExtraction, context)
+                return (canonicalStoreName(for: domain), .urlExtraction, context)
             }
         }
         
@@ -896,8 +1072,10 @@ class PDFAnalyzer {
         let storePattern = #/(?:Enseigne|Store|Magasin|Boutique)[\s:]+([A-Z][A-Za-z\s]{2,30})/#
         if let match = text.firstMatch(of: storePattern) {
             let storeName = String(match.1).trimmingCharacters(in: .whitespaces)
-            debugLog("  → Candidat depuis label 'Enseigne': \(storeName)")
-            return (formatStoreName(storeName), .labeledStore, context)
+            if !isIgnoredIssuerName(storeName) {
+                debugLog("  → Candidat depuis label 'Enseigne': \(storeName)")
+                return (canonicalStoreName(for: storeName), .labeledStore, context)
+            }
         }
         
         // Heuristique 4: Chercher des mots avec capitales (Title Case) au début
@@ -909,9 +1087,11 @@ class PDFAnalyzer {
             
             // Vérifier que ce n'est pas un mot trop générique
             let genericWords = ["Date", "Code", "Number", "Numero", "Valeur", "Montant", "Total", "Carte", "Bon"]
-            if !genericWords.contains(where: { candidate.contains($0) }) && candidate.count >= 4 {
+            if !genericWords.contains(where: { candidate.contains($0) }) &&
+                candidate.count >= 4 &&
+                !isIgnoredIssuerName(candidate) {
                 debugLog("  → Candidat Title Case: \(candidate)")
-                return (candidate, .titleCase, context)
+                return (canonicalStoreName(for: candidate), .titleCase, context)
             }
         }
         
@@ -924,6 +1104,10 @@ class PDFAnalyzer {
         
         // Si tout est en majuscules, convertir en Title Case
         if trimmed == trimmed.uppercased() {
+            if trimmed.rangeOfCharacter(from: .decimalDigits) != nil {
+                return trimmed
+            }
+
             return trimmed.capitalized
         }
         

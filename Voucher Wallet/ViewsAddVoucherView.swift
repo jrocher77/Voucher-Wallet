@@ -44,15 +44,21 @@ struct AddVoucherView: View {
 
     private let initialPDFData: Data?
     private let allowsManualEntry: Bool
+    private let onVoucherAdded: (UUID) -> Void
     
     enum AddMethod {
         case scan
         case manual
     }
 
-    init(initialPDFData: Data? = nil, allowsManualEntry: Bool = true) {
+    init(
+        initialPDFData: Data? = nil,
+        allowsManualEntry: Bool = true,
+        onVoucherAdded: @escaping (UUID) -> Void = { _ in }
+    ) {
         self.initialPDFData = initialPDFData
         self.allowsManualEntry = allowsManualEntry
+        self.onVoucherAdded = onVoucherAdded
     }
     
     var body: some View {
@@ -425,7 +431,10 @@ struct AddVoucherView: View {
         }
         
         do {
-            try viewModel.importSelectedVouchers(to: modelContext, pdfData: pdfData)
+            let importedVoucherIDs = try viewModel.importSelectedVouchers(to: modelContext, pdfData: pdfData)
+            if let lastImportedVoucherID = importedVoucherIDs.last {
+                onVoucherAdded(lastImportedVoucherID)
+            }
             dismiss()
         } catch {
             viewModel.errorMessage = "Erreur lors de l'import : \(error.localizedDescription)"
@@ -442,7 +451,7 @@ struct AddVoucherView: View {
         }
         
         do {
-            try viewModel.importSingleVoucher(
+            let voucherID = try viewModel.importSingleVoucher(
                 storeName: storeName,
                 amount: Double(amount),
                 voucherNumber: voucherNumber,
@@ -454,6 +463,7 @@ struct AddVoucherView: View {
                 pdfData: selectedPDFData ?? Data(),
                 to: modelContext
             )
+            onVoucherAdded(voucherID)
             dismiss()
         } catch {
             viewModel.errorMessage = "Erreur lors de l'enregistrement : \(error.localizedDescription)"

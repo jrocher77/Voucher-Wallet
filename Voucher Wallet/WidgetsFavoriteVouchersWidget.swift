@@ -32,10 +32,9 @@ struct OpenVoucherIntent: AppIntent {
         debugLog("🎯 OpenVoucherIntent appelé")
         
         // Stocker l'ID dans UserDefaults partagé
-        if let userDefaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) {
-            userDefaults.set(voucherID, forKey: "selectedVoucherID")
-            debugLog("✅ Voucher ID stocké dans l'App Group")
-        }
+        let store = SharedModelContainer.appGroupKeyValueStore
+        store.setString(voucherID, forKey: "selectedVoucherID")
+        debugLog("✅ Voucher ID stocké dans les préférences partagées")
         
         return .result()
     }
@@ -226,6 +225,7 @@ struct FavoriteVouchersProvider: TimelineProvider {
         if voucher.codeType == .qrCode { score += 4 }
         if voucher.codeImageData != nil { score += 2 }
         if voucher.pdfData != nil { score += 1 }
+        if voucher.imageData != nil { score += 1 }
         return score
     }
 }

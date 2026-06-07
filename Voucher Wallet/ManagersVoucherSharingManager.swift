@@ -144,8 +144,8 @@ final class VoucherSharingManager {
     }
 
     nonisolated private static func storedShareZones() -> [String: StoredShareZone] {
-        let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
-        guard let data = defaults.data(forKey: storedShareZonesKey),
+        let store = SharedModelContainer.appGroupKeyValueStore
+        guard let data = store.data(forKey: storedShareZonesKey),
               let zones = try? JSONDecoder().decode([String: StoredShareZone].self, from: data) else {
             return [:]
         }
@@ -153,13 +153,13 @@ final class VoucherSharingManager {
     }
 
     nonisolated private static func saveStoredShareZones(_ zones: [String: StoredShareZone]) {
-        let defaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) ?? .standard
+        let store = SharedModelContainer.appGroupKeyValueStore
         if zones.isEmpty {
-            defaults.removeObject(forKey: storedShareZonesKey)
+            store.removeObject(forKey: storedShareZonesKey)
             return
         }
         if let data = try? JSONEncoder().encode(zones) {
-            defaults.set(data, forKey: storedShareZonesKey)
+            store.setData(data, forKey: storedShareZonesKey)
         }
     }
 

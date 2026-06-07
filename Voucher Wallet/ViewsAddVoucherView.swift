@@ -10,6 +10,7 @@ import SwiftUI
 import CoreData
 import PhotosUI
 import UniformTypeIdentifiers
+import UIKit
 
 struct AddVoucherView: View {
     @Environment(\.managedObjectContext) private var modelContext
@@ -26,7 +27,8 @@ struct AddVoucherView: View {
     // États de la vue
     @State private var addMethod: AddMethod = .scan
     @State private var showingDocumentPicker = false
-    @State private var selectedPDFData: Data?
+    @State private var selectedImportSource: VoucherImportSource?
+    @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var editingVoucher: PDFAnalyzer.DetectedVoucher?
     
     // Champs du formulaire (pour un seul bon ou saisie manuelle)
@@ -40,9 +42,9 @@ struct AddVoucherView: View {
     @State private var selectedColor = Color(hex: "#007AFF")
     @State private var selectedTextColor = Color(hex: "#FFFFFF")
     @State private var detectedStoreConfidence: Double?
-    @State private var hasProcessedInitialPDF = false
+    @State private var hasProcessedInitialImport = false
 
-    private let initialPDFData: Data?
+    private let initialImportSource: VoucherImportSource?
     private let allowsManualEntry: Bool
     private let onVoucherAdded: (UUID) -> Void
     
@@ -52,11 +54,11 @@ struct AddVoucherView: View {
     }
 
     init(
-        initialPDFData: Data? = nil,
+        initialImportSource: VoucherImportSource? = nil,
         allowsManualEntry: Bool = true,
         onVoucherAdded: @escaping (UUID) -> Void = { _ in }
     ) {
-        self.initialPDFData = initialPDFData
+        self.initialImportSource = initialImportSource
         self.allowsManualEntry = allowsManualEntry
         self.onVoucherAdded = onVoucherAdded
     }
@@ -102,6 +104,10 @@ struct AddVoucherView: View {
             ) { result in
                 handleFileImport(result)
             }
+            .onChange(of: selectedPhotoItem) { oldValue, newValue in
+                guard let newValue else { return }
+                handlePhotoImport(newValue)
+            }
             .sheet(item: $editingVoucher) { voucher in
                 VoucherEditorView(
                     voucher: voucher,
@@ -126,7 +132,7 @@ struct AddVoucherView: View {
     private var methodPicker: some View {
         Section {
             Picker("Méthode d'ajout", selection: $addMethod) {
-                Label("Scanner un PDF", systemImage: "doc.text.viewfinder")
+                Label("Importer", systemImage: "doc.text.viewfinder")
                     .tag(AddMethod.scan)
                 Label("Saisie manuelle", systemImage: "keyboard")
                     .tag(AddMethod.manual)
@@ -173,7 +179,7 @@ struct AddVoucherView: View {
                 .padding(.vertical, 8)
             } else if viewModel.analysisResult != nil {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("PDF analysé avec succès", systemImage: "checkmark.circle.fill")
+                    Label(selectedImportSource?.successTitle ?? "Document analysé avec succès", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .fontWeight(.semibold)
                     
@@ -198,33 +204,41 @@ struct AddVoucherView: View {
                     Button {
                         resetAndShowPicker()
                     } label: {
-                        Label("Analyser un autre PDF", systemImage: "arrow.clockwise")
+                        Label(selectedImportSource?.retryTitle ?? "Analyser un autre document", systemImage: "arrow.clockwise")
                     }
                 }
                 .padding(.vertical, 8)
             } else {
-                Button {
-                    showingDocumentPicker = true
-                } label: {
-                    VStack(spacing: 12) {
-                        Image(systemName: "doc.badge.plus")
-                            .font(.system(size: 50))
-                            .foregroundStyle(.blue)
-                        
-                        Text("Sélectionner un PDF")
-                            .font(.headline)
-                        
-                        Text("Le PDF sera analysé automatiquement")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                VStack(spacing: 18) {
+                    Button {
+                        showingDocumentPicker = true
+                    } label: {
+                        importButtonContent(title: "Sélectionner un PDF", systemImage: "doc.text")
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
+                    .buttonStyle(.borderedProminent)
+
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        importButtonContent(title: "Importer une image", systemImage: "photo")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Text("Le document choisi sera analysé automatiquement.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 8)
             }
         }
+    }
+
+    private func importButtonContent(title: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+            Text(title)
+        }
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
     }
     
     private var formSection: some View {
@@ -292,7 +306,8 @@ struct AddVoucherView: View {
     
     private func resetAndShowPicker() {
         viewModel = VoucherImportViewModel()
-        selectedPDFData = nil
+        selectedImportSource = nil
+        selectedPhotoItem = nil
         storeName = ""
         amount = ""
         voucherNumber = ""
@@ -311,12 +326,12 @@ struct AddVoucherView: View {
         do {
             guard let url = try result.get().first else { return }
 
-            let data = try PDFImportSecurity.readPDFData(from: url)
-            selectedPDFData = data
+            let importSource = try VoucherImportSecurity.readImportSource(from: url)
+            selectedImportSource = importSource
             
-            // Analyser le PDF via le ViewModel
+            // Analyser le document via le ViewModel
             Task {
-                await viewModel.analyzePDF(data: data)
+                await viewModel.analyzeImportSource(importSource)
                 setupAfterAnalysis()
             }
         } catch {
@@ -327,14 +342,58 @@ struct AddVoucherView: View {
 
     @MainActor
     private func processInitialPDFIfNeeded() async {
-        guard let initialPDFData, !hasProcessedInitialPDF else { return }
+        await processInitialImportIfNeeded()
+    }
 
-        hasProcessedInitialPDF = true
+    @MainActor
+    private func processInitialImportIfNeeded() async {
+        guard let initialImportSource, !hasProcessedInitialImport else { return }
+
+        hasProcessedInitialImport = true
         addMethod = .scan
-        selectedPDFData = initialPDFData
+        selectedImportSource = initialImportSource
 
-        await viewModel.analyzePDF(data: initialPDFData)
+        await viewModel.analyzeImportSource(initialImportSource)
         setupAfterAnalysis()
+    }
+
+    private func handlePhotoImport(_ item: PhotosPickerItem) {
+        Task {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    await MainActor.run {
+                        viewModel.errorMessage = "L'image sélectionnée ne peut pas être lue."
+                        viewModel.showingError = true
+                    }
+                    return
+                }
+
+                guard data.count <= VoucherImportSecurity.maxImageByteCount, UIImage(data: data) != nil else {
+                    await MainActor.run {
+                        viewModel.errorMessage = data.count > VoucherImportSecurity.maxImageByteCount
+                            ? VoucherImportSecurityError.fileTooLarge(maxBytes: VoucherImportSecurity.maxImageByteCount).localizedDescription
+                            : VoucherImportSecurityError.invalidImage.localizedDescription
+                        viewModel.showingError = true
+                    }
+                    return
+                }
+
+                let importSource = VoucherImportSource.image(data: data)
+                await MainActor.run {
+                    selectedImportSource = importSource
+                    addMethod = .scan
+                }
+                await viewModel.analyzeImportSource(importSource)
+                await MainActor.run {
+                    setupAfterAnalysis()
+                }
+            } catch {
+                await MainActor.run {
+                    viewModel.errorMessage = error.localizedDescription
+                    viewModel.showingError = true
+                }
+            }
+        }
     }
     
     private func setupAfterAnalysis() {
@@ -424,14 +483,14 @@ struct AddVoucherView: View {
     }
     
     private func importSelectedVouchers() {
-        guard let pdfData = selectedPDFData else {
-            viewModel.errorMessage = "Données PDF manquantes"
+        guard let importSource = selectedImportSource else {
+            viewModel.errorMessage = "Données du document manquantes"
             viewModel.showingError = true
             return
         }
         
         do {
-            let importedVoucherIDs = try viewModel.importSelectedVouchers(to: modelContext, pdfData: pdfData)
+            let importedVoucherIDs = try viewModel.importSelectedVouchers(to: modelContext, importSource: importSource)
             if let lastImportedVoucherID = importedVoucherIDs.last {
                 onVoucherAdded(lastImportedVoucherID)
             }
@@ -460,7 +519,7 @@ struct AddVoucherView: View {
                 expirationDate: hasExpirationDate ? expirationDate : nil,
                 cardColor: selectedColor,
                 textColor: selectedTextColor,
-                pdfData: selectedPDFData ?? Data(),
+                importSource: selectedImportSource,
                 to: modelContext
             )
             onVoucherAdded(voucherID)

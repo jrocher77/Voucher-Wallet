@@ -128,6 +128,7 @@ struct ContentView: View {
         if voucher.codeType == .qrCode { score += 4 }
         if voucher.codeImageData != nil { score += 2 }
         if voucher.pdfData != nil { score += 1 }
+        if voucher.imageData != nil { score += 1 }
         return score
     }
 
@@ -311,12 +312,12 @@ struct ContentView: View {
                 get: { urlHandler.shouldShowImport },
                 set: { if !$0 { 
                     urlHandler.shouldShowImport = false
-                    urlHandler.pdfData = nil
+                    urlHandler.incomingImportSource = nil
                 }}
             )) {
-                if let pdfData = urlHandler.pdfData {
+                if let importSource = urlHandler.incomingImportSource {
                     AddVoucherView(
-                        initialPDFData: pdfData,
+                        initialImportSource: importSource,
                         allowsManualEntry: false,
                         onVoucherAdded: focusVoucher
                     )

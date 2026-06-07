@@ -86,6 +86,82 @@ struct PDFKitView: UIViewRepresentable {
     }
 }
 
+/// Vue pour afficher une image originale importée en plein écran
+struct OriginalImageViewerView: View {
+    let imageData: Data
+    var allowsSharing: Bool = true
+    var masksWhenCaptured: Bool = false
+    @Environment(\.dismiss) private var dismiss
+    @State private var showingShareSheet = false
+    @State private var isScreenCaptured = false
+
+    private var image: UIImage? {
+        UIImage(data: imageData)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let image {
+                    ScrollView([.vertical, .horizontal]) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .background(Color(.systemBackground))
+                } else {
+                    ContentUnavailableView(
+                        "Image indisponible",
+                        systemImage: "photo",
+                        description: Text("L'image originale ne peut pas être affichée.")
+                    )
+                }
+            }
+            .navigationTitle("Image originale")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fermer") {
+                        dismiss()
+                    }
+                }
+
+                if allowsSharing {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showingShareSheet = true
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                ShareSheetView(items: [imageData])
+            }
+            .overlay {
+                if masksWhenCaptured && isScreenCaptured {
+                    ContentUnavailableView(
+                        "Contenu masqué",
+                        systemImage: "eye.slash.fill",
+                        description: Text("L'image est masquée pendant la recopie ou l'enregistrement de l'écran.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(.background)
+                }
+            }
+            .onAppear {
+                isScreenCaptured = UIScreen.main.isCaptured
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
+                isScreenCaptured = UIScreen.main.isCaptured
+            }
+        }
+    }
+}
+
 #Preview {
     // Preview avec un PDF vide
     PDFViewerView(pdfData: Data())

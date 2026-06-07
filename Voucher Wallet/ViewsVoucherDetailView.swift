@@ -19,6 +19,7 @@ struct VoucherDetailView: View {
     @State private var isBrightnessMaximized = false
     @State private var showingDeleteAlert = false
     @State private var showingPDFViewer = false
+    @State private var showingImageViewer = false
     @State private var showingSharingDisclaimer = false
     @State private var showingCloudSharing = false
     @State private var isPreparingCloudSharing = false
@@ -239,6 +240,15 @@ struct VoucherDetailView: View {
                 )
             }
         }
+        .sheet(isPresented: $showingImageViewer) {
+            if let imageData = voucher.imageData {
+                OriginalImageViewerView(
+                    imageData: imageData,
+                    allowsSharing: !voucher.isReceivedShare,
+                    masksWhenCaptured: voucher.isInActiveShare
+                )
+            }
+        }
         .background {
             CloudVoucherSharingPresenter(
                 isPresented: $showingCloudSharing,
@@ -281,7 +291,7 @@ struct VoucherDetailView: View {
                 }
             }
         } message: {
-            Text("Ce bon peut être utilisé comme moyen de paiement. Les personnes invitées pourront consulter et utiliser son numéro, son code, son QR Code ou code-barres ainsi que son PDF éventuel.\n\nDans la fenêtre suivante, conservez le mode Collaborer. Pour une meilleure expérience, privilégiez l'envoi de l'invitation via Messages ou Mail.")
+            Text("Ce bon peut être utilisé comme moyen de paiement. Les personnes invitées pourront consulter et utiliser son numéro, son code, son QR Code ou code-barres ainsi que son document original éventuel.\n\nDans la fenêtre suivante, conservez le mode Collaborer. Pour une meilleure expérience, privilégiez l'envoi de l'invitation via Messages ou Mail.")
         }
     }
     
@@ -469,6 +479,19 @@ struct VoucherDetailView: View {
                     showingPDFViewer = true
                 } label: {
                     Label("Voir le PDF original", systemImage: "doc.text")
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if voucher.imageData != nil {
+                Button {
+                    showingImageViewer = true
+                } label: {
+                    Label("Voir l'image originale", systemImage: "photo")
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color(.systemGray6))

@@ -24,6 +24,7 @@ final class Voucher: NSManagedObject, Identifiable {
     @NSManaged var expirationDate: Date?
     @NSManaged var dateAdded: Date
     @NSManaged var pdfData: Data?
+    @NSManaged var imageData: Data?
     @NSManaged var storeColor: String
     @NSManaged var textColor: String
     @NSManaged var spentBeforeCurrentShare: Double
@@ -110,6 +111,7 @@ final class Voucher: NSManagedObject, Identifiable {
         dateAdded: Date = Date(),
         sortOrder: Int = 0,
         pdfData: Data? = nil,
+        imageData: Data? = nil,
         storeColor: String = "#007AFF",
         textColor: String = "#FFFFFF"
     ) {
@@ -125,6 +127,7 @@ final class Voucher: NSManagedObject, Identifiable {
         self.expirationDate = expirationDate
         self.dateAdded = dateAdded
         self.pdfData = pdfData
+        self.imageData = imageData
         self.storeColor = storeColor
         self.textColor = textColor
         self.spentBeforeCurrentShare = 0

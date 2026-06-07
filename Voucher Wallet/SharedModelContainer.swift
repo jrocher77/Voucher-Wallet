@@ -23,6 +23,7 @@ final class SharedModelContainer {
     nonisolated private static let deletedLegacyVoucherKeysKey = "deletedLegacyVoucherKeys"
     nonisolated private static let migratedLegacyVoucherIDsKey = "migratedLegacyVoucherIDs"
     nonisolated private static let migratedLegacyVoucherKeysKey = "migratedLegacyVoucherKeys"
+    nonisolated private static let appGroupStoreFallbackWarningKey = "appGroupStoreFallbackWarningLogged"
     static weak var active: SharedModelContainer?
 
     let container: NSPersistentCloudKitContainer
@@ -129,38 +130,57 @@ final class SharedModelContainer {
         try SharedModelContainer(inMemory: inMemory, enablesCloudSync: enablesCloudSync).container
     }
 
+    nonisolated static var appGroupKeyValueStore: AppGroupKeyValueStore {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupIdentifier
+        ) else {
+            logAppGroupStoreFallbackIfNeeded()
+            return .standardFallback
+        }
+
+        return AppGroupKeyValueStore(
+            fileURL: containerURL.appendingPathComponent("VoucherWalletSharedPreferences.plist")
+        )
+    }
+
+    nonisolated private static func logAppGroupStoreFallbackIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: appGroupStoreFallbackWarningKey) else { return }
+        UserDefaults.standard.set(true, forKey: appGroupStoreFallbackWarningKey)
+        debugLog("⚠️ App Group indisponible pour le stockage partagé. Fallback vers UserDefaults.standard.")
+    }
+
     static func rememberDeletedVoucherForLegacyMigration(_ voucher: Voucher) {
         guard let voucherID = voucher.safeID else { return }
-        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+        let store = appGroupKeyValueStore
 
-        var deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
+        var deletedIDs = Set(store.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
         deletedIDs.insert(voucherID.uuidString)
-        defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
+        store.setStringArray(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
 
         if let key = legacyVoucherPrivacyKey(for: voucher.voucherNumber) {
             var deletedKeys = legacyVoucherPrivacyKeys(
-                from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
+                from: store.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
             )
             deletedKeys.insert(key)
-            defaults.set(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
+            store.setStringArray(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
         }
     }
 
     static func forgetDeletedLegacyVoucherForUserImport(_ voucher: Voucher) {
         guard let voucherID = voucher.safeID else { return }
-        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+        let store = appGroupKeyValueStore
 
-        var deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
+        var deletedIDs = Set(store.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
         deletedIDs.remove(voucherID.uuidString)
-        defaults.set(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
+        store.setStringArray(Array(deletedIDs), forKey: deletedLegacyVoucherIDsKey)
 
         var deletedKeys = legacyVoucherPrivacyKeys(
-            from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
+            from: store.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
         )
         let lookupKeys = legacyVoucherStorageLookupKeys(for: voucher.voucherNumber)
         if !lookupKeys.isEmpty {
             deletedKeys.subtract(lookupKeys)
-            defaults.set(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
+            store.setStringArray(Array(deletedKeys), forKey: deletedLegacyVoucherKeysKey)
         }
     }
 
@@ -168,10 +188,10 @@ final class SharedModelContainer {
         guard shouldApplyDeletedLegacyFilter(to: voucher) else { return false }
         guard let voucherID = voucher.safeID else { return false }
 
-        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
-        let deletedIDs = Set(defaults.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
+        let store = appGroupKeyValueStore
+        let deletedIDs = Set(store.stringArray(forKey: deletedLegacyVoucherIDsKey) ?? [])
         let deletedKeys = legacyVoucherPrivacyKeys(
-            from: defaults.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
+            from: store.stringArray(forKey: deletedLegacyVoucherKeysKey) ?? []
         )
 
         return deletedIDs.contains(voucherID.uuidString) ||
@@ -215,13 +235,13 @@ final class SharedModelContainer {
     }
 
     nonisolated private static func migrateLegacyVoucherStoredKeysIfNeeded() {
-        let defaults = UserDefaults(suiteName: appGroupIdentifier) ?? .standard
+        let store = appGroupKeyValueStore
 
         for key in [deletedLegacyVoucherKeysKey, migratedLegacyVoucherKeysKey] {
-            let storedValues = defaults.stringArray(forKey: key) ?? []
+            let storedValues = store.stringArray(forKey: key) ?? []
             let privacyValues = legacyVoucherPrivacyKeys(from: storedValues)
             if Set(storedValues) != privacyValues {
-                defaults.set(Array(privacyValues), forKey: key)
+                store.setStringArray(Array(privacyValues), forKey: key)
             }
         }
     }
@@ -463,6 +483,7 @@ final class SharedModelContainer {
             attribute("expirationDate", .dateAttributeType, optional: true),
             attribute("dateAdded", .dateAttributeType, defaultValue: Date()),
             attribute("pdfData", .binaryDataAttributeType, optional: true, external: true),
+            attribute("imageData", .binaryDataAttributeType, optional: true, external: true),
             attribute("storeColor", .stringAttributeType, defaultValue: "#007AFF"),
             attribute("textColor", .stringAttributeType, defaultValue: "#FFFFFF"),
             attribute("spentBeforeCurrentShare", .doubleAttributeType, defaultValue: 0.0),
@@ -546,8 +567,8 @@ final class SharedModelContainer {
     private func importLegacySwiftDataStoreIfNeeded() {
         let migrationVersionKey = "legacySwiftDataMigrationVersion"
         let migrationVersion = 7
-        let defaults = UserDefaults(suiteName: Self.appGroupIdentifier) ?? .standard
-        let previousMigrationVersion = defaults.integer(forKey: migrationVersionKey)
+        let store = Self.appGroupKeyValueStore
+        let previousMigrationVersion = store.integer(forKey: migrationVersionKey)
         guard previousMigrationVersion < migrationVersion else { return }
         let alreadyRanLegacyMigration = previousMigrationVersion > 0
 
@@ -569,13 +590,13 @@ final class SharedModelContainer {
                 var repairedCount = 0
                 var skippedDeletedCount = 0
                 var skippedAlreadyMigratedCount = 0
-                let deletedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.deletedLegacyVoucherIDsKey) ?? [])
+                let deletedLegacyVoucherIDs = Set(store.stringArray(forKey: Self.deletedLegacyVoucherIDsKey) ?? [])
                 let deletedLegacyVoucherKeys = Self.legacyVoucherPrivacyKeys(
-                    from: defaults.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? []
+                    from: store.stringArray(forKey: Self.deletedLegacyVoucherKeysKey) ?? []
                 )
-                var migratedLegacyVoucherIDs = Set(defaults.stringArray(forKey: Self.migratedLegacyVoucherIDsKey) ?? [])
+                var migratedLegacyVoucherIDs = Set(store.stringArray(forKey: Self.migratedLegacyVoucherIDsKey) ?? [])
                 var migratedLegacyVoucherKeys = Self.legacyVoucherPrivacyKeys(
-                    from: defaults.stringArray(forKey: Self.migratedLegacyVoucherKeysKey) ?? []
+                    from: store.stringArray(forKey: Self.migratedLegacyVoucherKeysKey) ?? []
                 )
                 let existingVouchers = try context.fetch(Voucher.fetchRequest())
                 var vouchersByID = Dictionary(
@@ -702,10 +723,10 @@ final class SharedModelContainer {
                 if context.hasChanges {
                     try context.save()
                 }
-                defaults.set(Array(migratedLegacyVoucherIDs), forKey: Self.migratedLegacyVoucherIDsKey)
-                defaults.set(Array(migratedLegacyVoucherKeys), forKey: Self.migratedLegacyVoucherKeysKey)
+                store.setStringArray(Array(migratedLegacyVoucherIDs), forKey: Self.migratedLegacyVoucherIDsKey)
+                store.setStringArray(Array(migratedLegacyVoucherKeys), forKey: Self.migratedLegacyVoucherKeysKey)
             }
-            defaults.set(migrationVersion, forKey: migrationVersionKey)
+            store.setInteger(migrationVersion, forKey: migrationVersionKey)
             WidgetReloader.reloadFavoriteVouchersWidget()
             debugLog("✅ Migration locale : \(snapshots.count) bon(s) repris ou repares depuis SwiftData")
         } catch {
@@ -859,6 +880,7 @@ final class SharedModelContainer {
         if voucher.codeType == .qrCode { score += 4 }
         if voucher.codeImageData != nil { score += 2 }
         if voucher.pdfData != nil { score += 1 }
+        if voucher.imageData != nil { score += 1 }
         return score
     }
 
@@ -934,6 +956,9 @@ final class SharedModelContainer {
         }
         if canonical.pdfData == nil {
             canonical.pdfData = duplicate.pdfData
+        }
+        if canonical.imageData == nil {
+            canonical.imageData = duplicate.imageData
         }
         if canonical.storeColor == "#007AFF" {
             canonical.storeColor = duplicate.storeColor
@@ -1026,6 +1051,116 @@ final class SharedModelContainer {
     }
 #endif
 
+}
+
+struct AppGroupKeyValueStore: Sendable {
+    private let fileURL: URL?
+
+    nonisolated static let standardFallback = AppGroupKeyValueStore(fileURL: nil)
+
+    nonisolated init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    private nonisolated init(fileURL: URL?) {
+        self.fileURL = fileURL
+    }
+
+    nonisolated func stringArray(forKey key: String) -> [String]? {
+        if let fileURL {
+            return readFileDictionary(from: fileURL)[key] as? [String]
+        }
+        return UserDefaults.standard.stringArray(forKey: key)
+    }
+
+    nonisolated func setStringArray(_ value: [String], forKey key: String) {
+        set(value, forKey: key)
+    }
+
+    nonisolated func data(forKey key: String) -> Data? {
+        if let fileURL {
+            return readFileDictionary(from: fileURL)[key] as? Data
+        }
+        return UserDefaults.standard.data(forKey: key)
+    }
+
+    nonisolated func setData(_ value: Data, forKey key: String) {
+        set(value, forKey: key)
+    }
+
+    nonisolated func string(forKey key: String) -> String? {
+        if let fileURL {
+            return readFileDictionary(from: fileURL)[key] as? String
+        }
+        return UserDefaults.standard.string(forKey: key)
+    }
+
+    nonisolated func setString(_ value: String, forKey key: String) {
+        set(value, forKey: key)
+    }
+
+    nonisolated func integer(forKey key: String) -> Int {
+        if let fileURL {
+            return readFileDictionary(from: fileURL)[key] as? Int ?? 0
+        }
+        return UserDefaults.standard.integer(forKey: key)
+    }
+
+    nonisolated func setInteger(_ value: Int, forKey key: String) {
+        set(value, forKey: key)
+    }
+
+    nonisolated func removeObject(forKey key: String) {
+        if let fileURL {
+            mutateFileDictionary(at: fileURL) { dictionary in
+                dictionary.removeValue(forKey: key)
+            }
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+
+    private nonisolated func set(_ value: Any, forKey key: String) {
+        if let fileURL {
+            mutateFileDictionary(at: fileURL) { dictionary in
+                dictionary[key] = value
+            }
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+    }
+
+    private nonisolated func readFileDictionary(from fileURL: URL) -> [String: Any] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let dictionary = plist as? [String: Any] else {
+            return [:]
+        }
+        return dictionary
+    }
+
+    private nonisolated func mutateFileDictionary(
+        at fileURL: URL,
+        update: (inout [String: Any]) -> Void
+    ) {
+        var dictionary = readFileDictionary(from: fileURL)
+        update(&dictionary)
+
+        do {
+            let data = try PropertyListSerialization.data(
+                fromPropertyList: dictionary,
+                format: .xml,
+                options: 0
+            )
+            try FileManager.default.createDirectory(
+                at: fileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            debugLog("⚠️ Écriture du stockage partagé impossible : \(error.localizedDescription)")
+        }
+    }
 }
 
 final class CloudSyncCoordinator: @unchecked Sendable {

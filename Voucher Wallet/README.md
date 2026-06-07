@@ -299,7 +299,7 @@ open "Voucher Wallet.xcodeproj"
 
 ### 3. Configurer Info.plist
 
-Assurez-vous que la prise en charge des PDF est présente. L'app importe des PDF via le sélecteur de documents iOS et n'a pas besoin des permissions caméra ou photothèque tant qu'aucune fonctionnalité dédiée ne les utilise.
+Assurez-vous que la prise en charge des PDF et des images est présente. L'app importe des PDF et des images via le sélecteur de documents iOS, le partage iOS et la photothèque.
 
 ```xml
 <key>UTImportedTypeDeclarations</key>
@@ -349,9 +349,9 @@ NavigationLink {
 2. Créer un nouveau bon "Carrefour"
 3. ✅ Vérifier que les couleurs sont pré-remplies
 
-#### Test 3 : Import PDF avec doublon
-1. Importer un PDF
-2. Réimporter le même PDF
+#### Test 3 : Import document avec doublon
+1. Importer un PDF ou une image
+2. Réimporter le même document
 3. ✅ Vérifier l'alerte de doublon
 
 #### Test 4 : Réglages iOS

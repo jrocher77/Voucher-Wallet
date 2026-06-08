@@ -195,6 +195,7 @@ class PDFAnalyzer {
             }
             
             result.possibleVoucherNumbers.append(contentsOf: extractVoucherNumbers(from: allText))
+            result.possibleVoucherNumbers = uniqueVoucherNumbers(result.possibleVoucherNumbers)
             result.possiblePinCodes = extractPinCodes(from: allText)
             result.possibleAmounts = extractAmounts(from: allText)
             result.possibleDates = extractDates(from: allText)
@@ -285,6 +286,7 @@ class PDFAnalyzer {
         result.possibleVoucherNumbers.append(contentsOf: result.barcodes.compactMap { $0.payloadStringValue })
         result.possibleVoucherNumbers.append(contentsOf: result.qrCodes.compactMap { $0.payloadStringValue })
         result.possibleVoucherNumbers.append(contentsOf: extractVoucherNumbers(from: allText))
+        result.possibleVoucherNumbers = uniqueVoucherNumbers(result.possibleVoucherNumbers)
         result.possiblePinCodes = extractPinCodes(from: allText)
         result.possibleAmounts = extractAmounts(from: allText)
         result.possibleDates = extractDates(from: allText)
@@ -581,6 +583,25 @@ class PDFAnalyzer {
 
         debugLog("🔢 \(numbers.count) numéro(s) extrait(s) du texte")
         return numbers
+    }
+
+    private static func uniqueVoucherNumbers(_ numbers: [String]) -> [String] {
+        var seen = Set<String>()
+        var uniqueNumbers: [String] = []
+
+        for number in numbers {
+            let displayValue = number.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !displayValue.isEmpty else { continue }
+
+            let key = displayValue
+                .filter { !$0.isWhitespace && $0 != "-" }
+                .uppercased()
+
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            uniqueNumbers.append(displayValue)
+        }
+
+        return uniqueNumbers
     }
     
     /// Extrait les codes PIN possibles (chiffres ou lettres quand le libellé est explicite)

@@ -49,6 +49,10 @@ enum VoucherImportSource: Equatable {
 
 @Observable
 class URLHandler {
+    private static let sharedImageImportHost = "import-shared-image"
+    private static let sharedImageImportFileName = "IncomingSharedImage"
+    private static let sharedImageImportRetryCount = 40
+    private static let sharedImageImportRetryDelayNanoseconds: UInt64 = 100_000_000
     var incomingPDFURL: URL?
     var incomingImportSource: VoucherImportSource?
     var shouldShowImport = false
@@ -61,6 +65,11 @@ class URLHandler {
         // Format: voucherwallet://voucher/{UUID}
         if url.scheme == "voucherwallet", url.host == "voucher" {
             handleVoucherDeepLink(url)
+            return
+        }
+
+        if url.scheme == "voucherwallet", url.host == Self.sharedImageImportHost {
+            handleSharedImageImport()
             return
         }
         
@@ -103,6 +112,49 @@ class URLHandler {
         } catch {
             debugLog("❌ Error reading import document: \(error)")
         }
+    }
+
+    private func handleSharedImageImport() {
+        Task {
+            do {
+                let data = try await waitForSharedImageData()
+                guard data.count <= VoucherImportSecurity.maxImageByteCount,
+                      UIImage(data: data) != nil else {
+                    throw VoucherImportSecurityError.invalidImage
+                }
+
+                await MainActor.run {
+                    self.incomingImportSource = .image(data: data)
+                    self.shouldShowImport = true
+                    debugLog("✅ Image partagée prête pour import")
+                }
+            } catch {
+                debugLog("❌ Error reading shared image import: \(error)")
+            }
+        }
+    }
+
+    private func waitForSharedImageData() async throws -> Data {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedModelContainer.appGroupIdentifier
+        ) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let imageURL = containerURL.appendingPathComponent(Self.sharedImageImportFileName)
+        for attempt in 0...Self.sharedImageImportRetryCount {
+            if FileManager.default.fileExists(atPath: imageURL.path) {
+                let data = try Data(contentsOf: imageURL)
+                try? FileManager.default.removeItem(at: imageURL)
+                return data
+            }
+
+            if attempt < Self.sharedImageImportRetryCount {
+                try await Task.sleep(nanoseconds: Self.sharedImageImportRetryDelayNanoseconds)
+            }
+        }
+
+        throw CocoaError(.fileNoSuchFile)
     }
 }
 

@@ -72,6 +72,7 @@ final class SharedModelContainer {
         }
 
         container.viewContext.automaticallyMergesChangesFromParent = true
+        container.viewContext.shouldDeleteInaccessibleFaults = true
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         container.viewContext.transactionAuthor = "VoucherWalletApp"
         Self.migrateLegacyVoucherStoredKeysIfNeeded()
@@ -1190,6 +1191,7 @@ final class CloudSyncCoordinator: @unchecked Sendable {
         let stores = [persistence.privateStore, persistence.sharedStore].compactMap { $0 }
         let backgroundContext = persistence.container.newBackgroundContext()
         backgroundContext.transactionAuthor = "VoucherWalletHistoryMerge"
+        backgroundContext.shouldDeleteInaccessibleFaults = true
         backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
 
         backgroundContext.perform { [weak self] in

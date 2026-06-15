@@ -519,6 +519,7 @@ final class VoucherSharingManager {
         markSharingStep("création du partage CloudKit")
         return try await withCheckedThrowingContinuation { continuation in
             let backgroundContext = persistentContainer.newBackgroundContext()
+            backgroundContext.shouldDeleteInaccessibleFaults = true
             backgroundContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
             backgroundContext.transactionAuthor = "VoucherWalletSharePreparation"
             backgroundContext.perform {

@@ -11,6 +11,7 @@ import CoreData
 import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
+import AVFoundation
 
 struct AddVoucherView: View {
     @Environment(\.managedObjectContext) private var modelContext
@@ -27,6 +28,7 @@ struct AddVoucherView: View {
     // États de la vue
     @State private var addMethod: AddMethod = .scan
     @State private var showingDocumentPicker = false
+    @State private var showingCameraPicker = false
     @State private var selectedImportSource: VoucherImportSource?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var editingVoucher: PDFAnalyzer.DetectedVoucher?
@@ -107,6 +109,18 @@ struct AddVoucherView: View {
             .onChange(of: selectedPhotoItem) { oldValue, newValue in
                 guard let newValue else { return }
                 handlePhotoImport(newValue)
+            }
+            .sheet(isPresented: $showingCameraPicker) {
+                CameraPickerView(
+                    onImagePicked: { image in
+                        showingCameraPicker = false
+                        handleCameraImage(image)
+                    },
+                    onCancel: {
+                        showingCameraPicker = false
+                    }
+                )
+                .ignoresSafeArea()
             }
             .sheet(item: $editingVoucher) { voucher in
                 VoucherEditorView(
@@ -209,7 +223,7 @@ struct AddVoucherView: View {
                 }
                 .padding(.vertical, 8)
             } else {
-                VStack(spacing: 18) {
+                VStack(spacing: importActionSpacing) {
                     Button {
                         showingDocumentPicker = true
                     } label: {
@@ -219,6 +233,13 @@ struct AddVoucherView: View {
 
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                         importButtonContent(title: "Importer une image", systemImage: "photo")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        showCameraPickerIfAvailable()
+                    } label: {
+                        importButtonContent(title: "Prendre une photo", systemImage: "camera")
                     }
                     .buttonStyle(.bordered)
 
@@ -240,6 +261,8 @@ struct AddVoucherView: View {
         .frame(maxWidth: .infinity)
         .multilineTextAlignment(.center)
     }
+
+    private var importActionSpacing: CGFloat { 26 }
     
     private var formSection: some View {
         Group {
@@ -308,6 +331,7 @@ struct AddVoucherView: View {
         viewModel = VoucherImportViewModel()
         selectedImportSource = nil
         selectedPhotoItem = nil
+        showingCameraPicker = false
         storeName = ""
         amount = ""
         voucherNumber = ""
@@ -368,31 +392,94 @@ struct AddVoucherView: View {
                     return
                 }
 
-                guard data.count <= VoucherImportSecurity.maxImageByteCount, UIImage(data: data) != nil else {
-                    await MainActor.run {
-                        viewModel.errorMessage = data.count > VoucherImportSecurity.maxImageByteCount
-                            ? VoucherImportSecurityError.fileTooLarge(maxBytes: VoucherImportSecurity.maxImageByteCount).localizedDescription
-                            : VoucherImportSecurityError.invalidImage.localizedDescription
-                        viewModel.showingError = true
-                    }
-                    return
-                }
-
-                let importSource = VoucherImportSource.image(data: data)
-                await MainActor.run {
-                    selectedImportSource = importSource
-                    addMethod = .scan
-                }
-                await viewModel.analyzeImportSource(importSource)
-                await MainActor.run {
-                    setupAfterAnalysis()
-                }
+                await processImageImportData(
+                    data,
+                    readErrorMessage: "L'image sélectionnée ne peut pas être lue."
+                )
             } catch {
                 await MainActor.run {
                     viewModel.errorMessage = error.localizedDescription
                     viewModel.showingError = true
                 }
             }
+        }
+    }
+
+    private func showCameraPickerIfAvailable() {
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            viewModel.errorMessage = "L'appareil photo n'est pas disponible sur cet appareil."
+            viewModel.showingError = true
+            return
+        }
+
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            showingCameraPicker = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        showingCameraPicker = true
+                    } else {
+                        viewModel.errorMessage = "L'accès à l'appareil photo a été refusé. Autorisez-le dans Réglages pour photographier un bon."
+                        viewModel.showingError = true
+                    }
+                }
+            }
+        case .denied, .restricted:
+            viewModel.errorMessage = "L'accès à l'appareil photo est désactivé. Autorisez-le dans Réglages pour photographier un bon."
+            viewModel.showingError = true
+        @unknown default:
+            viewModel.errorMessage = "L'appareil photo ne peut pas être utilisé pour le moment."
+            viewModel.showingError = true
+        }
+    }
+
+    private func handleCameraImage(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.86) else {
+            viewModel.errorMessage = "La photo prise ne peut pas être lue."
+            viewModel.showingError = true
+            return
+        }
+
+        Task {
+            await processImageImportData(
+                data,
+                readErrorMessage: "La photo prise ne peut pas être lue."
+            )
+        }
+    }
+
+    private func processImageImportData(_ data: Data, readErrorMessage: String) async {
+        guard data.count <= VoucherImportSecurity.maxImageByteCount else {
+            await MainActor.run {
+                viewModel.errorMessage = VoucherImportSecurityError.fileTooLarge(
+                    maxBytes: VoucherImportSecurity.maxImageByteCount
+                ).localizedDescription
+                viewModel.showingError = true
+            }
+            return
+        }
+
+        guard UIImage(data: data) != nil else {
+            await MainActor.run {
+                viewModel.errorMessage = readErrorMessage
+                viewModel.showingError = true
+            }
+            return
+        }
+
+        let importSource = VoucherImportSource.image(data: data)
+        await MainActor.run {
+            selectedImportSource = importSource
+            selectedPhotoItem = nil
+            addMethod = .scan
+        }
+
+        await viewModel.analyzeImportSource(importSource)
+
+        await MainActor.run {
+            setupAfterAnalysis()
         }
     }
     
@@ -534,4 +621,48 @@ struct AddVoucherView: View {
 #Preview {
     AddVoucherView()
         .environment(\.managedObjectContext, PreviewData.shared.container.viewContext)
+}
+
+private struct CameraPickerView: UIViewControllerRepresentable {
+    let onImagePicked: (UIImage) -> Void
+    let onCancel: () -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImagePicked: onImagePicked, onCancel: onCancel)
+    }
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let onImagePicked: (UIImage) -> Void
+        let onCancel: () -> Void
+
+        init(onImagePicked: @escaping (UIImage) -> Void, onCancel: @escaping () -> Void) {
+            self.onImagePicked = onImagePicked
+            self.onCancel = onCancel
+        }
+
+        func imagePickerController(
+            _ picker: UIImagePickerController,
+            didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
+        ) {
+            if let image = info[.originalImage] as? UIImage {
+                onImagePicked(image)
+            } else {
+                onCancel()
+            }
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onCancel()
+        }
+    }
 }

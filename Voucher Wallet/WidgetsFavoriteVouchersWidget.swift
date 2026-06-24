@@ -66,7 +66,7 @@ struct FavoriteVouchersEntry: TimelineEntry {
 
 // MARK: - Voucher Snapshot (pour le widget)
 
-struct VoucherSnapshot: Identifiable {
+struct VoucherSnapshot: Identifiable, Codable {
     let id: UUID
     let storeName: String
     let remainingBalance: Double?
@@ -97,6 +97,7 @@ struct VoucherSnapshot: Identifiable {
 
 struct FavoriteVouchersProvider: TimelineProvider {
     typealias Entry = FavoriteVouchersEntry
+    private static let cachedFavoriteSnapshotsKey = "cachedFavoriteVoucherSnapshots"
     
     func placeholder(in context: Context) -> FavoriteVouchersEntry {
         FavoriteVouchersEntry(
@@ -202,10 +203,40 @@ struct FavoriteVouchersProvider: TimelineProvider {
                 )
             }
             
+            cacheFavoriteSnapshots(snapshots)
             debugLog("📊 Widget: Retourne \(snapshots.count) snapshots")
             return snapshots
         } catch {
             debugLog("❌ Erreur lors de la récupération des vouchers favoris: \(error)")
+            let cachedSnapshots = loadCachedFavoriteSnapshots()
+            debugLog("📦 Widget: Retourne \(cachedSnapshots.count) snapshots en cache")
+            return cachedSnapshots
+        }
+    }
+
+    private func cacheFavoriteSnapshots(_ snapshots: [VoucherSnapshot]) {
+        do {
+            let data = try JSONEncoder().encode(snapshots)
+            SharedModelContainer.appGroupKeyValueStore.setData(
+                data,
+                forKey: Self.cachedFavoriteSnapshotsKey
+            )
+        } catch {
+            debugLog("⚠️ Cache widget favoris impossible: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadCachedFavoriteSnapshots() -> [VoucherSnapshot] {
+        guard let data = SharedModelContainer.appGroupKeyValueStore.data(
+            forKey: Self.cachedFavoriteSnapshotsKey
+        ) else {
+            return []
+        }
+
+        do {
+            return try JSONDecoder().decode([VoucherSnapshot].self, from: data)
+        } catch {
+            debugLog("⚠️ Lecture du cache widget favoris impossible: \(error.localizedDescription)")
             return []
         }
     }

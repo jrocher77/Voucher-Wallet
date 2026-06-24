@@ -176,7 +176,7 @@ extension Voucher {
     }
 
     var safeID: UUID? {
-        guard managedObjectContext != nil, !isDeleted else { return nil }
+        guard hasAccessiblePersistentBacking else { return nil }
         if let value = primitiveValue(forKey: "id") as? UUID {
             return value
         }

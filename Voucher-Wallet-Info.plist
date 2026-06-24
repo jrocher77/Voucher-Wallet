@@ -40,6 +40,8 @@
 	</array>
 	<key>CKSharingSupported</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>L'appareil photo permet de photographier un bon d'achat pour l'analyser et l'ajouter à votre wallet.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -43,6 +43,7 @@ final class SharedModelContainer {
             inMemory: inMemory,
             enablesCloudSync: enablesCloudSync
         )
+        Self.allowStoreAccessAfterFirstUnlock(descriptions: descriptions, inMemory: inMemory)
         Self.resetSharedStoreOnNextLaunchIfNeeded(descriptions: descriptions, inMemory: inMemory)
         container.persistentStoreDescriptions = descriptions
 
@@ -413,7 +414,7 @@ final class SharedModelContainer {
             description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
             description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
             description.setOption(
-                FileProtectionType.complete.rawValue as NSString,
+                FileProtectionType.completeUntilFirstUserAuthentication.rawValue as NSString,
                 forKey: NSPersistentStoreFileProtectionKey
             )
             description.shouldMigrateStoreAutomatically = true
@@ -435,6 +436,34 @@ final class SharedModelContainer {
         }
 
         return [privateDescription, sharedDescription]
+    }
+
+    private static func allowStoreAccessAfterFirstUnlock(
+        descriptions: [NSPersistentStoreDescription],
+        inMemory: Bool
+    ) {
+        guard !inMemory else { return }
+
+        let fileManager = FileManager.default
+        for description in descriptions {
+            guard let storeURL = description.url else { continue }
+            let candidates = [
+                storeURL,
+                URL(fileURLWithPath: storeURL.path + "-shm"),
+                URL(fileURLWithPath: storeURL.path + "-wal")
+            ]
+
+            for url in candidates where fileManager.fileExists(atPath: url.path) {
+                do {
+                    try fileManager.setAttributes(
+                        [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                        ofItemAtPath: url.path
+                    )
+                } catch {
+                    debugLog("⚠️ Protection fichier du store inchangée (\(url.lastPathComponent)): \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private static func resetSharedStoreOnNextLaunchIfNeeded(
@@ -1158,6 +1187,10 @@ struct AppGroupKeyValueStore: Sendable {
                 withIntermediateDirectories: true
             )
             try data.write(to: fileURL, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: fileURL.path
+            )
         } catch {
             debugLog("⚠️ Écriture du stockage partagé impossible : \(error.localizedDescription)")
         }

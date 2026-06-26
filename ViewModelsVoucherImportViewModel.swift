@@ -8,16 +8,16 @@
 import SwiftUI
 import CoreData
 
-/// ViewModel centralisé pour gérer l'import de bons depuis PDF
+/// ViewModel centralisé pour gérer l'import de bons depuis PDF ou image
 @Observable
 class VoucherImportViewModel {
     
     // MARK: - State
     
-    /// Résultat de l'analyse PDF
+    /// Résultat de l'analyse du document
     var analysisResult: PDFAnalyzer.AnalysisResult?
     
-    /// Bons détectés dans le PDF
+    /// Bons détectés dans le document
     var detectedVouchers: [PDFAnalyzer.DetectedVoucher] = []
     
     /// IDs des bons sélectionnés pour l'import
@@ -30,7 +30,7 @@ class VoucherImportViewModel {
     var isAnalyzing = false
     
     /// Message de progression
-    var progressMessage = "Chargement du PDF..."
+    var progressMessage = "Chargement du document..."
     
     /// Valeur de progression (0.0 à 1.0)
     var progressValue: Double = 0.0
@@ -67,8 +67,19 @@ class VoucherImportViewModel {
         detectedVouchers.filter { !duplicateVoucherIds.contains($0.id) }.count
     }
     
-    // MARK: - PDF Analysis
-    
+    // MARK: - Document Analysis
+
+    /// Analyse une source d'import et détecte les bons
+    /// - Parameter source: Source PDF ou image à analyser
+    func analyzeImportSource(_ source: VoucherImportSource) async {
+        switch source {
+        case .pdf(let data):
+            await analyzePDF(data: data)
+        case .image(let data):
+            await analyzeImage(data: data)
+        }
+    }
+
     /// Analyse un PDF et détecte les bons
     /// - Parameter pdfData: Données du PDF à analyser
     func analyzePDF(data pdfData: Data) async {
@@ -101,6 +112,42 @@ class VoucherImportViewModel {
         } catch {
             await MainActor.run {
                 debugLog("❌ Erreur d'analyse: \(error.localizedDescription)")
+                self.errorMessage = "Erreur lors de l'analyse : \(error.localizedDescription)"
+                self.showingError = true
+                self.isAnalyzing = false
+            }
+        }
+    }
+
+    /// Analyse une image et détecte les bons
+    /// - Parameter imageData: Données de l'image à analyser
+    func analyzeImage(data imageData: Data) async {
+        isAnalyzing = true
+        totalPages = 1
+
+        do {
+            debugLog("🔍 Début de l'analyse image...")
+
+            let result = try await PDFAnalyzer.analyzeImage(data: imageData) { progress in
+                Task { @MainActor in
+                    self.progressMessage = progress.userMessage
+                    self.progressValue = progress.progress(totalPages: 1)
+                }
+            }
+
+            await MainActor.run {
+                self.analysisResult = result
+                self.detectedVouchers = result.detectedVouchers
+
+                debugLog("📊 Analyse image terminée:")
+                debugLog("  - Bons détectés: \(result.detectedVouchers.count)")
+                debugLog("  - Enseigne: \(result.detectedStoreName ?? "non détectée")")
+
+                self.isAnalyzing = false
+            }
+        } catch {
+            await MainActor.run {
+                debugLog("❌ Erreur d'analyse image: \(error.localizedDescription)")
                 self.errorMessage = "Erreur lors de l'analyse : \(error.localizedDescription)"
                 self.showingError = true
                 self.isAnalyzing = false
@@ -192,12 +239,12 @@ class VoucherImportViewModel {
     /// Importe les bons sélectionnés dans le contexte Core Data
     /// - Parameters:
     ///   - modelContext: Contexte Core Data
-    ///   - pdfData: Données PDF originales
+    ///   - importSource: Source originale importée
     /// - Returns: Nombre de bons importés avec succès
     @discardableResult
     func importSelectedVouchers(
         to modelContext: NSManagedObjectContext,
-        pdfData: Data
+        importSource: VoucherImportSource
     ) throws -> [UUID] {
         let selectedVouchers = detectedVouchers.filter { selectedVoucherIds.contains($0.id) }
         
@@ -227,7 +274,8 @@ class VoucherImportViewModel {
                 codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
                 expirationDate: detectedVoucher.expirationDate,
                 sortOrder: nextSortOrder,
-                pdfData: pdfData,
+                pdfData: importSource.pdfData,
+                imageData: importSource.imageData,
                 storeColor: colorHex,
                 textColor: textColorHex
             )
@@ -252,6 +300,14 @@ class VoucherImportViewModel {
         
         return importedVoucherIDs
     }
+
+    @discardableResult
+    func importSelectedVouchers(
+        to modelContext: NSManagedObjectContext,
+        pdfData: Data
+    ) throws -> [UUID] {
+        try importSelectedVouchers(to: modelContext, importSource: .pdf(data: pdfData))
+    }
     
     /// Importe un seul bon avec des paramètres personnalisés
     /// - Parameters:
@@ -263,7 +319,7 @@ class VoucherImportViewModel {
     ///   - expirationDate: Date d'expiration (optionnel)
     ///   - cardColor: Couleur de la carte
     ///   - textColor: Couleur du texte
-    ///   - pdfData: Données PDF
+    ///   - importSource: Source originale importée
     ///   - modelContext: Contexte Core Data
     func importSingleVoucher(
         storeName: String,
@@ -274,7 +330,7 @@ class VoucherImportViewModel {
         expirationDate: Date?,
         cardColor: Color,
         textColor: Color,
-        pdfData: Data,
+        importSource: VoucherImportSource?,
         to modelContext: NSManagedObjectContext
     ) throws -> UUID {
         // Générer le code
@@ -298,7 +354,8 @@ class VoucherImportViewModel {
             codeImageData: codeImage.flatMap { BarcodeGenerator.imageToData($0) },
             expirationDate: expirationDate,
             sortOrder: getNextSortOrder(in: modelContext),
-            pdfData: pdfData,
+            pdfData: importSource?.pdfData,
+            imageData: importSource?.imageData,
             storeColor: colorHex,
             textColor: textColorHex
         )
@@ -313,6 +370,32 @@ class VoucherImportViewModel {
         try modelContext.save()
         debugLog("✅ Bon importé: \(storeName)")
         return voucher.safeID ?? voucher.id
+    }
+
+    func importSingleVoucher(
+        storeName: String,
+        amount: Double?,
+        voucherNumber: String,
+        pinCode: String?,
+        codeType: CodeType,
+        expirationDate: Date?,
+        cardColor: Color,
+        textColor: Color,
+        pdfData: Data,
+        to modelContext: NSManagedObjectContext
+    ) throws -> UUID {
+        try importSingleVoucher(
+            storeName: storeName,
+            amount: amount,
+            voucherNumber: voucherNumber,
+            pinCode: pinCode,
+            codeType: codeType,
+            expirationDate: expirationDate,
+            cardColor: cardColor,
+            textColor: textColor,
+            importSource: .pdf(data: pdfData),
+            to: modelContext
+        )
     }
 
     private func getNextSortOrder(in modelContext: NSManagedObjectContext) -> Int {

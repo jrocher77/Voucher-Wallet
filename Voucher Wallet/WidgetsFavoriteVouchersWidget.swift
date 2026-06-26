@@ -32,10 +32,9 @@ struct OpenVoucherIntent: AppIntent {
         debugLog("🎯 OpenVoucherIntent appelé")
         
         // Stocker l'ID dans UserDefaults partagé
-        if let userDefaults = UserDefaults(suiteName: SharedModelContainer.appGroupIdentifier) {
-            userDefaults.set(voucherID, forKey: "selectedVoucherID")
-            debugLog("✅ Voucher ID stocké dans l'App Group")
-        }
+        let store = SharedModelContainer.appGroupKeyValueStore
+        store.setString(voucherID, forKey: "selectedVoucherID")
+        debugLog("✅ Voucher ID stocké dans les préférences partagées")
         
         return .result()
     }
@@ -67,7 +66,7 @@ struct FavoriteVouchersEntry: TimelineEntry {
 
 // MARK: - Voucher Snapshot (pour le widget)
 
-struct VoucherSnapshot: Identifiable {
+struct VoucherSnapshot: Identifiable, Codable {
     let id: UUID
     let storeName: String
     let remainingBalance: Double?
@@ -98,6 +97,7 @@ struct VoucherSnapshot: Identifiable {
 
 struct FavoriteVouchersProvider: TimelineProvider {
     typealias Entry = FavoriteVouchersEntry
+    private static let cachedFavoriteSnapshotsKey = "cachedFavoriteVoucherSnapshots"
     
     func placeholder(in context: Context) -> FavoriteVouchersEntry {
         FavoriteVouchersEntry(
@@ -203,10 +203,40 @@ struct FavoriteVouchersProvider: TimelineProvider {
                 )
             }
             
+            cacheFavoriteSnapshots(snapshots)
             debugLog("📊 Widget: Retourne \(snapshots.count) snapshots")
             return snapshots
         } catch {
             debugLog("❌ Erreur lors de la récupération des vouchers favoris: \(error)")
+            let cachedSnapshots = loadCachedFavoriteSnapshots()
+            debugLog("📦 Widget: Retourne \(cachedSnapshots.count) snapshots en cache")
+            return cachedSnapshots
+        }
+    }
+
+    private func cacheFavoriteSnapshots(_ snapshots: [VoucherSnapshot]) {
+        do {
+            let data = try JSONEncoder().encode(snapshots)
+            SharedModelContainer.appGroupKeyValueStore.setData(
+                data,
+                forKey: Self.cachedFavoriteSnapshotsKey
+            )
+        } catch {
+            debugLog("⚠️ Cache widget favoris impossible: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadCachedFavoriteSnapshots() -> [VoucherSnapshot] {
+        guard let data = SharedModelContainer.appGroupKeyValueStore.data(
+            forKey: Self.cachedFavoriteSnapshotsKey
+        ) else {
+            return []
+        }
+
+        do {
+            return try JSONDecoder().decode([VoucherSnapshot].self, from: data)
+        } catch {
+            debugLog("⚠️ Lecture du cache widget favoris impossible: \(error.localizedDescription)")
             return []
         }
     }
@@ -226,6 +256,7 @@ struct FavoriteVouchersProvider: TimelineProvider {
         if voucher.codeType == .qrCode { score += 4 }
         if voucher.codeImageData != nil { score += 2 }
         if voucher.pdfData != nil { score += 1 }
+        if voucher.imageData != nil { score += 1 }
         return score
     }
 }

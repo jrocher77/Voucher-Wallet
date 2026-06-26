@@ -195,6 +195,7 @@ class PDFAnalyzer {
             }
             
             result.possibleVoucherNumbers.append(contentsOf: extractVoucherNumbers(from: allText))
+            result.possibleVoucherNumbers = uniqueVoucherNumbers(result.possibleVoucherNumbers)
             result.possiblePinCodes = extractPinCodes(from: allText)
             result.possibleAmounts = extractAmounts(from: allText)
             result.possibleDates = extractDates(from: allText)
@@ -215,6 +216,106 @@ class PDFAnalyzer {
             await MainActor.run { handler(.completed) }
         }
         
+        return result
+    }
+
+    /// Analyse une image et extrait toutes les informations possibles.
+    /// L'image est traitée comme un document d'une seule page.
+    static func analyzeImage(
+        data: Data,
+        progressHandler: (@MainActor @Sendable (AnalysisProgress) -> Void)? = nil
+    ) async throws -> AnalysisResult {
+        if let handler = progressHandler {
+            await MainActor.run { handler(.loading(message: "Chargement de l'image...")) }
+        }
+
+        guard let image = UIImage(data: data) else {
+            throw PDFAnalyzerError.invalidImage
+        }
+
+        var result = AnalysisResult()
+
+        if let handler = progressHandler {
+            await MainActor.run { handler(.analyzingPage(current: 1, total: 1)) }
+            await MainActor.run { handler(.detectingBarcodes(pageNumber: 1)) }
+        }
+
+        let codes = try await detectBarcodes(in: image)
+        for code in codes {
+            if code.symbology == .qr {
+                result.qrCodes.append(code)
+            } else {
+                result.barcodes.append(code)
+            }
+        }
+
+        if let handler = progressHandler {
+            await MainActor.run { handler(.performingOCR(pageNumber: 1)) }
+        }
+
+        let ocrText = try await performOCR(on: image)
+        result.detectedText.append(contentsOf: ocrText)
+
+        if let handler = progressHandler {
+            await MainActor.run { handler(.extractingData(message: "Extraction des informations...")) }
+        }
+
+        let allText = result.detectedText.joined(separator: " ")
+        var voucherNumber: String?
+        var codeType: CodeType = .barcode
+        var codeImageData: Data?
+
+        if let firstBarcode = result.barcodes.first,
+           let payload = firstBarcode.payloadStringValue {
+            voucherNumber = payload
+            codeType = .barcode
+            if let image = BarcodeGenerator.generateBarcode(from: payload) {
+                codeImageData = BarcodeGenerator.imageToData(image)
+            }
+        } else if let firstQR = result.qrCodes.first,
+                  let payload = firstQR.payloadStringValue {
+            voucherNumber = payload
+            codeType = .qrCode
+            if let image = BarcodeGenerator.generateQRCode(from: payload) {
+                codeImageData = BarcodeGenerator.imageToData(image)
+            }
+        } else {
+            voucherNumber = extractVoucherNumbers(from: allText).first
+        }
+
+        result.possibleVoucherNumbers.append(contentsOf: result.barcodes.compactMap { $0.payloadStringValue })
+        result.possibleVoucherNumbers.append(contentsOf: result.qrCodes.compactMap { $0.payloadStringValue })
+        result.possibleVoucherNumbers.append(contentsOf: extractVoucherNumbers(from: allText))
+        result.possibleVoucherNumbers = uniqueVoucherNumbers(result.possibleVoucherNumbers)
+        result.possiblePinCodes = extractPinCodes(from: allText)
+        result.possibleAmounts = extractAmounts(from: allText)
+        result.possibleDates = extractDates(from: allText)
+
+        let storeDetection = detectStoreName(from: allText)
+        result.detectedStoreName = storeDetection.name
+        result.storeNameConfidence = storeDetection.confidence
+        result.detectionMethod = storeDetection.method
+
+        if let voucherNumber {
+            result.detectedVouchers.append(DetectedVoucher(
+                pageNumber: 1,
+                voucherNumber: voucherNumber,
+                codeType: codeType,
+                storeName: storeDetection.name,
+                storeNameConfidence: storeDetection.confidence,
+                amount: result.possibleAmounts.first,
+                pinCode: result.possiblePinCodes.first,
+                expirationDate: result.possibleDates.first,
+                codeImageData: codeImageData,
+                storeColor: storeDetection.name.flatMap { storeColorHex(for: $0) }
+            ))
+        }
+
+        if let handler = progressHandler {
+            await MainActor.run { handler(.completed) }
+        }
+
+        debugLog("🖼️ Analyse image terminée: \(result.detectedVouchers.count) bon(s) détecté(s)")
         return result
     }
     
@@ -482,6 +583,25 @@ class PDFAnalyzer {
 
         debugLog("🔢 \(numbers.count) numéro(s) extrait(s) du texte")
         return numbers
+    }
+
+    private static func uniqueVoucherNumbers(_ numbers: [String]) -> [String] {
+        var seen = Set<String>()
+        var uniqueNumbers: [String] = []
+
+        for number in numbers {
+            let displayValue = number.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !displayValue.isEmpty else { continue }
+
+            let key = displayValue
+                .filter { !$0.isWhitespace && $0 != "-" }
+                .uppercased()
+
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            uniqueNumbers.append(displayValue)
+        }
+
+        return uniqueNumbers
     }
     
     /// Extrait les codes PIN possibles (chiffres ou lettres quand le libellé est explicite)
@@ -1134,16 +1254,35 @@ class PDFAnalyzer {
         
         return image
     }
+
+    private static func storeColorHex(for storeName: String) -> String? {
+        if let learnedColor = StoreNameLearning.shared.getLearnedColor(for: storeName) {
+            return learnedColor
+        }
+
+        if let presetColor = StorePreset.presets[storeName] {
+            return presetColor
+        }
+
+        for (preset, color) in StorePreset.presets where storeName.localizedCaseInsensitiveContains(preset) {
+            return color
+        }
+
+        return nil
+    }
 }
 
 enum PDFAnalyzerError: LocalizedError {
     case invalidPDF
+    case invalidImage
     case analysisError
     
     var errorDescription: String? {
         switch self {
         case .invalidPDF:
             return "Le fichier PDF n'est pas valide"
+        case .invalidImage:
+            return "L'image sélectionnée n'est pas valide"
         case .analysisError:
             return "Erreur lors de l'analyse du PDF"
         }

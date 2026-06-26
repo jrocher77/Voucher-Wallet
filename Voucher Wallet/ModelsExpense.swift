@@ -6,6 +6,20 @@
 import CoreData
 import Foundation
 
+extension NSManagedObject {
+    var hasAccessiblePersistentBacking: Bool {
+        guard let context = managedObjectContext, !isDeleted else { return false }
+        guard !objectID.isTemporaryID else { return true }
+
+        do {
+            let object = try context.existingObject(with: objectID)
+            return object.managedObjectContext != nil && !object.isDeleted
+        } catch {
+            return false
+        }
+    }
+}
+
 @objc(Expense)
 final class Expense: NSManagedObject, Identifiable {
     @NSManaged var id: UUID
@@ -39,7 +53,7 @@ extension Expense {
     }
 
     var safeID: UUID? {
-        guard managedObjectContext != nil, !isDeleted else { return nil }
+        guard hasAccessiblePersistentBacking else { return nil }
         if let value = primitiveValue(forKey: "id") as? UUID {
             return value
         }

@@ -100,9 +100,9 @@ struct VoucherFormFields: View {
             }
             
             // Suggestions de numéros si disponibles
-            if let result = analysisResult, !result.possibleVoucherNumbers.isEmpty {
+            if !voucherNumberSuggestions.isEmpty {
                 Menu("Numéros suggérés") {
-                    ForEach(result.possibleVoucherNumbers, id: \.self) { number in
+                    ForEach(voucherNumberSuggestions, id: \.self) { number in
                         Button(number) {
                             voucherNumber = number
                         }
@@ -152,6 +152,34 @@ struct VoucherFormFields: View {
     
     private var isDuplicate: Bool {
         VoucherDuplicateDetector.isDuplicate(voucherNumber: voucherNumber, in: existingVouchers)
+    }
+
+    private var voucherNumberSuggestions: [String] {
+        guard let result = analysisResult else { return [] }
+
+        let currentKey = normalizedVoucherNumberKey(voucherNumber)
+        var seen = Set<String>()
+        var suggestions: [String] = []
+
+        for number in result.possibleVoucherNumbers {
+            let displayValue = number.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = normalizedVoucherNumberKey(displayValue)
+            guard !displayValue.isEmpty,
+                  !key.isEmpty,
+                  key != currentKey,
+                  seen.insert(key).inserted else {
+                continue
+            }
+            suggestions.append(displayValue)
+        }
+
+        return suggestions
+    }
+
+    private func normalizedVoucherNumberKey(_ value: String) -> String {
+        value
+            .filter { !$0.isWhitespace && $0 != "-" }
+            .uppercased()
     }
     
     private var confidenceToDisplay: Double? {

@@ -7,11 +7,54 @@
 
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
+import UIKit
+
+enum VoucherImportSource: Equatable {
+    case pdf(data: Data)
+    case image(data: Data)
+
+    var data: Data {
+        switch self {
+        case .pdf(let data):
+            return data
+        case .image(let data):
+            return data
+        }
+    }
+
+    var pdfData: Data? {
+        if case .pdf(let data) = self { return data }
+        return nil
+    }
+
+    var imageData: Data? {
+        if case .image(let data) = self { return data }
+        return nil
+    }
+
+    var isPDF: Bool {
+        if case .pdf = self { return true }
+        return false
+    }
+
+    var successTitle: String {
+        isPDF ? "PDF analysé avec succès" : "Image analysée avec succès"
+    }
+
+    var retryTitle: String {
+        isPDF ? "Analyser un autre PDF" : "Analyser un autre document"
+    }
+}
 
 @Observable
 class URLHandler {
+    private static let sharedImageImportHost = "import-shared-image"
+    private static let sharedImageImportFileName = "IncomingSharedImage"
+    private static let sharedImageImportRetryCount = 40
+    private static let sharedImageImportRetryDelayNanoseconds: UInt64 = 100_000_000
     var incomingPDFURL: URL?
-    var pdfData: Data?
+    var incomingImportSource: VoucherImportSource?
     var shouldShowImport = false
     var selectedVoucherID: UUID?
     
@@ -24,14 +67,19 @@ class URLHandler {
             handleVoucherDeepLink(url)
             return
         }
-        
-        // Sinon, vérifier si c'est un PDF
-        guard url.pathExtension.lowercased() == "pdf" else {
-            debugLog("❌ Not a PDF or valid deep link")
+
+        if url.scheme == "voucherwallet", url.host == Self.sharedImageImportHost {
+            handleSharedImageImport()
             return
         }
         
-        handlePDFURL(url)
+        // Sinon, vérifier si c'est un document importable
+        guard let source = VoucherImportSecurity.importSource(for: url) else {
+            debugLog("❌ Not an importable document or valid deep link")
+            return
+        }
+        
+        handleImportURL(url, source: source)
     }
     
     private func handleVoucherDeepLink(_ url: URL) {
@@ -51,26 +99,122 @@ class URLHandler {
         }
     }
     
-    private func handlePDFURL(_ url: URL) {
+    private func handleImportURL(_ url: URL, source: VoucherImportSource.Kind) {
         do {
-            let data = try PDFImportSecurity.readPDFData(from: url)
-            debugLog("✅ PDF read successfully: \(data.count) bytes")
+            let importSource = try VoucherImportSecurity.readImportSource(from: url, kind: source)
+            debugLog("✅ Document read successfully: \(importSource.data.count) bytes")
 
             DispatchQueue.main.async {
-                self.pdfData = data
+                self.incomingImportSource = importSource
                 self.shouldShowImport = true
                 debugLog("✅ URLHandler - Sheet should show now")
             }
         } catch {
-            debugLog("❌ Error reading PDF: \(error)")
+            debugLog("❌ Error reading import document: \(error)")
         }
+    }
+
+    private func handleSharedImageImport() {
+        Task {
+            do {
+                let data = try await waitForSharedImageData()
+                guard data.count <= VoucherImportSecurity.maxImageByteCount,
+                      UIImage(data: data) != nil else {
+                    throw VoucherImportSecurityError.invalidImage
+                }
+
+                await MainActor.run {
+                    self.incomingImportSource = .image(data: data)
+                    self.shouldShowImport = true
+                    debugLog("✅ Image partagée prête pour import")
+                }
+            } catch {
+                debugLog("❌ Error reading shared image import: \(error)")
+            }
+        }
+    }
+
+    private func waitForSharedImageData() async throws -> Data {
+        guard let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: SharedModelContainer.appGroupIdentifier
+        ) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let imageURL = containerURL.appendingPathComponent(Self.sharedImageImportFileName)
+        for attempt in 0...Self.sharedImageImportRetryCount {
+            if FileManager.default.fileExists(atPath: imageURL.path) {
+                let data = try Data(contentsOf: imageURL)
+                try? FileManager.default.removeItem(at: imageURL)
+                return data
+            }
+
+            if attempt < Self.sharedImageImportRetryCount {
+                try await Task.sleep(nanoseconds: Self.sharedImageImportRetryDelayNanoseconds)
+            }
+        }
+
+        throw CocoaError(.fileNoSuchFile)
     }
 }
 
-enum PDFImportSecurity {
+extension VoucherImportSource {
+    enum Kind {
+        case pdf
+        case image
+    }
+}
+
+enum VoucherImportSecurity {
     static let maxPDFByteCount = 25 * 1024 * 1024
+    static let maxImageByteCount = 25 * 1024 * 1024
+
+    static func importSource(for url: URL) -> VoucherImportSource.Kind? {
+        switch url.pathExtension.lowercased() {
+        case "pdf":
+            return .pdf
+        case "jpg", "jpeg", "png", "heic", "heif", "webp", "tiff", "tif":
+            return .image
+        default:
+            let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
+            if contentType?.conforms(to: .pdf) == true {
+                return .pdf
+            }
+            if contentType?.conforms(to: .image) == true {
+                return .image
+            }
+            return nil
+        }
+    }
+
+    static func readImportSource(from url: URL, kind: VoucherImportSource.Kind? = nil) throws -> VoucherImportSource {
+        let resolvedKind = kind ?? importSource(for: url)
+        guard let resolvedKind else {
+            throw VoucherImportSecurityError.unsupportedFile
+        }
+
+        let maxBytes = maxByteCount(for: resolvedKind)
+        let data = try readData(from: url, maxBytes: maxBytes)
+
+        switch resolvedKind {
+        case .pdf:
+            return .pdf(data: data)
+        case .image:
+            guard UIImage(data: data) != nil else {
+                throw VoucherImportSecurityError.invalidImage
+            }
+            return .image(data: data)
+        }
+    }
 
     static func readPDFData(from url: URL) throws -> Data {
+        guard case .pdf(let data) = try readImportSource(from: url, kind: .pdf) else {
+            throw VoucherImportSecurityError.unsupportedFile
+        }
+        return data
+    }
+
+    private static func readData(from url: URL, maxBytes: Int) throws -> Data {
         let didStartSecurityScope = url.startAccessingSecurityScopedResource()
         defer {
             if didStartSecurityScope {
@@ -82,25 +226,38 @@ enum PDFImportSecurity {
             throw CocoaError(.fileReadNoPermission)
         }
 
-        try validateFileSize(at: url)
+        try validateFileSize(at: url, maxBytes: maxBytes)
         let data = try Data(contentsOf: url)
-        guard data.count <= maxPDFByteCount else {
-            throw PDFImportSecurityError.fileTooLarge(maxBytes: maxPDFByteCount)
+        guard data.count <= maxBytes else {
+            throw VoucherImportSecurityError.fileTooLarge(maxBytes: maxBytes)
         }
         return data
     }
 
-    private static func validateFileSize(at url: URL) throws {
+    private static func maxByteCount(for kind: VoucherImportSource.Kind) -> Int {
+        switch kind {
+        case .pdf:
+            return maxPDFByteCount
+        case .image:
+            return maxImageByteCount
+        }
+    }
+
+    private static func validateFileSize(at url: URL, maxBytes: Int) throws {
         let values = try? url.resourceValues(forKeys: [.fileSizeKey])
         guard let fileSize = values?.fileSize else { return }
-        if fileSize > maxPDFByteCount {
-            throw PDFImportSecurityError.fileTooLarge(maxBytes: maxPDFByteCount)
+        if fileSize > maxBytes {
+            throw VoucherImportSecurityError.fileTooLarge(maxBytes: maxBytes)
         }
     }
 }
 
-enum PDFImportSecurityError: LocalizedError {
+typealias PDFImportSecurity = VoucherImportSecurity
+
+enum VoucherImportSecurityError: LocalizedError {
     case fileTooLarge(maxBytes: Int)
+    case invalidImage
+    case unsupportedFile
 
     var errorDescription: String? {
         switch self {
@@ -108,7 +265,11 @@ enum PDFImportSecurityError: LocalizedError {
             let formatter = ByteCountFormatter()
             formatter.allowedUnits = [.useMB]
             formatter.countStyle = .file
-            return "Le PDF est trop volumineux. La taille maximale est de \(formatter.string(fromByteCount: Int64(maxBytes)))."
+            return "Le document est trop volumineux. La taille maximale est de \(formatter.string(fromByteCount: Int64(maxBytes)))."
+        case .invalidImage:
+            return "L'image sélectionnée ne peut pas être lue."
+        case .unsupportedFile:
+            return "Ce type de document n'est pas pris en charge."
         }
     }
 }

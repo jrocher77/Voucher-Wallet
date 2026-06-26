@@ -139,12 +139,14 @@ private struct OnboardingPageView: View {
         switch page.kind {
         case .wallet:
             WalletIllustration()
-        case .pdf:
-            PDFImportIllustration()
+        case .importSources:
+            ImportSourcesIllustration()
         case .scan:
             ScanIllustration()
         case .checkout:
             CheckoutIllustration()
+        case .sharing:
+            SharingIllustration()
         case .widget:
             WidgetIllustration()
         case .customize:
@@ -196,37 +198,46 @@ private struct WalletIllustration: View {
     }
 }
 
-private struct PDFImportIllustration: View {
+private struct ImportSourcesIllustration: View {
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color(.secondarySystemGroupedBackground))
-                .frame(width: 210, height: 260)
-                .shadow(color: .black.opacity(0.12), radius: 18, x: 0, y: 12)
-
-            VStack(spacing: 14) {
-                Image(systemName: "doc.fill")
-                    .font(.system(size: 54))
-                    .foregroundStyle(.red)
-
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(.secondary.opacity(0.35))
-                    .frame(width: 116, height: 10)
-
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(.secondary.opacity(0.2))
-                    .frame(width: 142, height: 10)
-
-                Label("Importer", systemImage: "square.and.arrow.down")
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(.blue, in: Capsule())
-                    .padding(.top, 10)
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                importTile(systemImage: "doc.fill", title: "PDF", color: .red)
+                importTile(systemImage: "photo.fill", title: "Image", color: .blue)
             }
+
+            HStack(spacing: 12) {
+                importTile(systemImage: "rectangle.dashed", title: "Capture", color: .purple)
+                importTile(systemImage: "camera.fill", title: "Photo", color: .orange)
+            }
+
+            Label("Importer", systemImage: "square.and.arrow.down")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 11)
+                .background(.blue, in: Capsule())
         }
         .frame(height: 280)
+    }
+
+    private func importTile(systemImage: String, title: String, color: Color) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(color)
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color(.label))
+        }
+        .frame(width: 112, height: 92)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color(.separator).opacity(0.3), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 6)
     }
 }
 
@@ -307,6 +318,65 @@ private struct CheckoutIllustration: View {
             }
         }
         .frame(height: 260)
+    }
+}
+
+private struct SharingIllustration: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.blue.opacity(0.18))
+                .frame(width: 240, height: 240)
+
+            VStack(spacing: 16) {
+                HStack(spacing: 18) {
+                    participant(initials: "JR", color: .orange)
+
+                    VStack(spacing: 6) {
+                        Image(systemName: "icloud.fill")
+                            .font(.system(size: 42))
+                            .foregroundStyle(.blue)
+
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(Color(.secondaryLabel))
+                    }
+
+                    participant(initials: "AM", color: .green)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Bon partagé", systemImage: "person.2.fill")
+                        .font(.headline)
+
+                    HStack {
+                        Text("Dépenses suivies")
+                            .foregroundStyle(Color(.secondaryLabel))
+                        Spacer()
+                        Text("32,70 €")
+                            .fontWeight(.bold)
+                    }
+                    .font(.subheadline)
+                }
+                .padding(16)
+                .frame(width: 250)
+                .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 22))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22)
+                        .stroke(Color(.separator).opacity(0.3), lineWidth: 1)
+                }
+            }
+        }
+        .frame(height: 260)
+    }
+
+    private func participant(initials: String, color: Color) -> some View {
+        Text(initials)
+            .font(.headline.weight(.bold))
+            .foregroundStyle(.white)
+            .frame(width: 62, height: 62)
+            .background(color.gradient, in: Circle())
+            .shadow(color: .black.opacity(0.14), radius: 10, x: 0, y: 6)
     }
 }
 
@@ -435,9 +505,9 @@ private struct OnboardingPage: Identifiable {
             kind: .wallet
         ),
         OnboardingPage(
-            title: "Importez vos PDF",
-            message: "Ajoutez un bon depuis Fichiers, Mail, Safari ou toute app capable de partager un PDF.",
-            kind: .pdf
+            title: "Importez vos documents",
+            message: "Ajoutez un bon depuis un PDF, une image, une capture d'écran ou une photo prise directement dans l'app.",
+            kind: .importSources
         ),
         OnboardingPage(
             title: "Laissez l'app analyser",
@@ -448,6 +518,11 @@ private struct OnboardingPage: Identifiable {
             title: "Présentez le code en caisse",
             message: "Affichez rapidement le code-barres ou le QR code. Touchez le code pour augmenter la luminosité.",
             kind: .checkout
+        ),
+        OnboardingPage(
+            title: "Partagez avec vos proches",
+            message: "Partagez un bon via iCloud, suivez les dépenses de chacun et gardez le solde à jour pour tous les participants.",
+            kind: .sharing
         ),
         OnboardingPage(
             title: "Gardez vos favoris sous la main",
@@ -464,9 +539,10 @@ private struct OnboardingPage: Identifiable {
 
 private enum OnboardingIllustrationKind {
     case wallet
-    case pdf
+    case importSources
     case scan
     case checkout
+    case sharing
     case widget
     case customize
 }

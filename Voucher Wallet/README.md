@@ -1,6 +1,6 @@
 # Mes bons d'achat
 
-Application iOS pour gérer et organiser vos bons d'achat numériquement, avec support des codes-barres et import PDF intelligent.
+Application iOS pour gérer et organiser vos bons d'achat numériquement, avec support des codes-barres et import PDF, image et appareil photo intelligent.
 
 ---
 
@@ -8,7 +8,8 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 
 ### ✨ Gestion des Bons
 - **Ajout manuel** : Créez vos bons avec formulaire complet
-- **Import PDF** : Analysez vos PDF de bons avec OCR (Vision Framework)
+- **Import PDF, image et appareil photo** : Analysez vos PDF, images, captures d'écran et photos prises directement dans l'app avec OCR (Vision Framework)
+- **Écran de lancement natif** : Ouverture sur un launch screen statique aux couleurs de l'application
 - **Détection d'enseigne robuste** : Priorise les titres de bons et ignore les émetteurs techniques quand le marchand est indiqué ailleurs dans le PDF
 - **Co-branding Fnac/Darty** : Normalisation automatique en `Fnac / Darty` quand les deux enseignes sont détectées
 - **Import multiple** : Détectez et importez plusieurs bons depuis un PDF
@@ -44,8 +45,8 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 
 ### 📊 Protection et Sécurité
 - **Protection contre les doublons** : Détection automatique basée sur le numéro de bon
-- **Import PDF borné** : Les PDF importés sont lus via l'accès sécurisé iOS et refusés au-delà de 25 Mo
-- **Protection fichier iOS** : Les stores Core Data locaux demandent la protection complète des fichiers pour les données sensibles
+- **Import borné** : Les PDF, images et photos importés sont lus via l'accès sécurisé iOS et refusés au-delà de 25 Mo
+- **Protection fichier iOS** : Les stores Core Data locaux restent protégés avant le premier déverrouillage, puis accessibles au widget
 - **Avertissements visuels** : Indicateurs en temps réel lors de la saisie
 - **Filtrage intelligent** : Import multiple avec exclusion automatique des doublons
 - **Alertes récapitulatives** : Rapport détaillé des bons ignorés
@@ -53,7 +54,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 ### ⚙️ Réglages iOS
 - **Statistiques d'apprentissage** : Consultez les données apprises
 - **Réinitialisation** : Effacez les préférences apprises
-- **Démonstration** : Relancez l'écran de présentation au prochain lancement
+- **Démonstration** : Relancez l'écran de présentation au prochain lancement, avec les nouveautés d'import image/photo et de partage iCloud
 - **Identité de partage** : Modifiez ou réinitialisez le nom affiché avec vos dépenses sur les bons partagés
 - **Synchronisation** : Mise à jour automatique entre l'app et les Réglages
 - **À propos** : Version et informations de l'app
@@ -129,7 +130,7 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
 - **Core Data + CloudKit** : `NSPersistentCloudKitContainer` utilise un store privé et un store partagé afin de prendre en charge `CKShare`
 - **Miroir des dépenses partagées** : `ManagersSharedExpenseMirrorManager.swift` écrit et relit des records CloudKit `SharedExpenseMirror` pour rendre le pull-to-refresh fiable quand l'import Core Data est différé
 - **App Group** : Partage des stores Core Data locaux entre l'application et le widget
-- **Protection locale** : Les stores SQLite Core Data utilisent `NSPersistentStoreFileProtectionKey` avec la protection fichier complète d'iOS
+- **Protection locale** : Les stores SQLite Core Data utilisent `NSPersistentStoreFileProtectionKey` avec `completeUntilFirstUserAuthentication` pour permettre les refreshs WidgetKit après le premier déverrouillage
 - **Préférences personnelles** : favoris et ordre sont conservés en données privées, séparées du bon partagé
 - **UserDefaults** : Préférences d'apprentissage
   - `learnedStoreColors` : Dictionnaire `[String: String]`
@@ -138,6 +139,7 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
   - `reset_learning_requested` : Toggle de réinitialisation
   - `has_seen_onboarding` : Indique si la démonstration initiale a déjà été vue
   - `show_onboarding_next_launch` : Toggle pour relancer la démonstration
+  - `last_seen_onboarding_major_version` : Version majeure déjà présentée dans la démonstration, pour réafficher l'onboarding une fois uniquement après un changement majeur
 
 ---
 
@@ -238,7 +240,7 @@ Voucher Wallet/
 │   │   └── EditVoucherView.swift
 │   │
 │   ├── Import & Selection
-│   │   ├── AddVoucherView.swift (flux unique: ajout manuel + PDF + partage)
+│   │   ├── AddVoucherView.swift (flux unique: ajout manuel + PDF + image + photo + partage)
 │   │   └── ViewComponentsMultiVoucherList.swift
 │   │
 │   ├── Expenses
@@ -299,7 +301,7 @@ open "Voucher Wallet.xcodeproj"
 
 ### 3. Configurer Info.plist
 
-Assurez-vous que la prise en charge des PDF est présente. L'app importe des PDF via le sélecteur de documents iOS et n'a pas besoin des permissions caméra ou photothèque tant qu'aucune fonctionnalité dédiée ne les utilise.
+Assurez-vous que la prise en charge des PDF, des images et de l'appareil photo est présente. L'app importe des PDF et des images via le sélecteur de documents iOS, le partage iOS, la photothèque et une photo prise depuis l'écran d'ajout.
 
 ```xml
 <key>UTImportedTypeDeclarations</key>
@@ -349,9 +351,9 @@ NavigationLink {
 2. Créer un nouveau bon "Carrefour"
 3. ✅ Vérifier que les couleurs sont pré-remplies
 
-#### Test 3 : Import PDF avec doublon
-1. Importer un PDF
-2. Réimporter le même PDF
+#### Test 3 : Import document avec doublon
+1. Importer un PDF ou une image
+2. Réimporter le même document
 3. ✅ Vérifier l'alerte de doublon
 
 #### Test 4 : Réglages iOS
@@ -389,7 +391,7 @@ Les logs suivants sont générés :
 - Validation de contraste
 - Aperçu temps réel
 - Protection contre les doublons (saisie manuelle)
-- Import PDF simple et multiple
+- Import PDF simple et multiple, image, capture d'écran et photo
 
 ### EditVoucherView.swift
 - Modification de bon existant

@@ -216,20 +216,20 @@
           <li>montant, solde restant et historique des dépenses ;</li>
           <li>numéro de bon, code PIN, code-barres ou QR code ;</li>
           <li>date d'expiration, notes et favoris ;</li>
-          <li>PDF importé dans l'application, si vous choisissez d'en ajouter un.</li>
+          <li>PDF, image, capture d'écran ou photo importée dans l'application, si vous choisissez d'en ajouter un.</li>
         </ul>
       </section>
 
       <section aria-labelledby="use-title">
         <h2 id="use-title">Utilisation des informations</h2>
-        <p>Ces informations servent uniquement à fournir les fonctions de l'application : afficher vos bons, calculer les soldes, détecter les doublons, extraire des informations depuis un PDF, mémoriser vos préférences de couleur, afficher vos favoris dans le widget iOS et partager volontairement un bon avec des personnes de confiance.</p>
-        <p>L'analyse des PDF est effectuée avec les frameworks Apple disponibles sur l'appareil, notamment PDFKit et Vision. L'app Mes bons d'achat n'envoie pas vos PDF vers un serveur externe pour les analyser. Les PDF trop volumineux peuvent être refusés afin d'éviter un chargement excessif en mémoire.</p>
+        <p>Ces informations servent uniquement à fournir les fonctions de l'application : afficher vos bons, calculer les soldes, détecter les doublons, extraire des informations depuis un PDF, une image ou une photo prise dans l'app, mémoriser vos préférences de couleur, afficher vos favoris dans le widget iOS et partager volontairement un bon avec des personnes de confiance.</p>
+        <p>L'analyse des PDF, images et photos est effectuée avec les frameworks Apple disponibles sur l'appareil, notamment PDFKit et Vision. L'app Mes bons d'achat n'envoie pas vos documents vers un serveur externe pour les analyser. Les fichiers trop volumineux peuvent être refusés afin d'éviter un chargement excessif en mémoire.</p>
       </section>
 
       <section aria-labelledby="storage-title">
         <h2 id="storage-title">Stockage et partage</h2>
         <p>Les données de l'application sont stockées avec les mécanismes de persistance d'iOS, avec la protection fichier locale disponible sur l'appareil, et synchronisées, lorsque iCloud est disponible, dans le conteneur CloudKit associé à Mes bons d'achat. Cette synchronisation permet de récupérer vos bons sur vos appareils connectés au même compte iCloud.</p>
-        <p>Lorsque vous choisissez de partager un bon via iCloud, ses informations utilisables comme moyen de paiement, notamment le numéro, le code PIN, le code-barres ou QR code et le PDF éventuel, deviennent accessibles aux participants que vous invitez. Les dépenses saisies pendant le partage peuvent afficher le nom d'affichage de leur auteur aux autres participants.</p>
+        <p>Lorsque vous choisissez de partager un bon via iCloud, ses informations utilisables comme moyen de paiement, notamment le numéro, le code PIN, le code-barres ou QR code et le document original éventuel, deviennent accessibles aux participants que vous invitez. Les dépenses saisies pendant le partage peuvent afficher le nom d'affichage de leur auteur aux autres participants.</p>
         <p>L'app peut interroger CloudKit pour vérifier qu'un partage reçu est encore disponible. Cette vérification sert uniquement à afficher ou masquer correctement les bons partagés dans l'app.</p>
         <p>Certaines préférences et informations nécessaires au widget peuvent être conservées dans UserDefaults et dans l'App Group de l'application, afin que l'application principale et le widget puissent afficher les mêmes favoris.</p>
         <p>L'app Mes bons d'achat ne transmet pas vos informations personnelles à des tiers et n'utilise pas de service publicitaire ou d'analyse comportementale.</p>
@@ -237,7 +237,8 @@
 
       <section aria-labelledby="permissions-title">
         <h2 id="permissions-title">Permissions et fichiers</h2>
-        <p>Si vous importez un PDF depuis Fichiers, Photos ou une autre application, iOS peut vous demander d'autoriser l'accès au document sélectionné. Cet accès sert uniquement à lire le fichier choisi et à l'ajouter à Mes bons d'achat.</p>
+        <p>Si vous importez un PDF, une image ou une capture d'écran depuis Fichiers, Photos ou une autre application, iOS peut vous demander d'autoriser l'accès au document sélectionné. Cet accès sert uniquement à lire le fichier choisi et à l'ajouter à Mes bons d'achat.</p>
+        <p>Si vous utilisez l'appareil photo, iOS peut vous demander l'autorisation d'accéder à la caméra. Cette autorisation sert uniquement à photographier un bon choisi par vous pour l'analyser ; la photo n'est pas enregistrée automatiquement dans votre photothèque.</p>
         <p class="note">Les numéros de bons, codes PIN, QR codes et codes-barres peuvent donner accès à une valeur d'achat. Partagez un bon uniquement avec des personnes de confiance et évitez de diffuser des captures d'écran qui les affichent.</p>
       </section>
 

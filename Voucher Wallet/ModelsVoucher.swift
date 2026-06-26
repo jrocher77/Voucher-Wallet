@@ -24,6 +24,7 @@ final class Voucher: NSManagedObject, Identifiable {
     @NSManaged var expirationDate: Date?
     @NSManaged var dateAdded: Date
     @NSManaged var pdfData: Data?
+    @NSManaged var imageData: Data?
     @NSManaged var storeColor: String
     @NSManaged var textColor: String
     @NSManaged var spentBeforeCurrentShare: Double
@@ -44,6 +45,7 @@ final class Voucher: NSManagedObject, Identifiable {
     var activeExpensesList: [Expense] {
         var seenIDs = Set<UUID>()
         return Array(expenses ?? []).filter { expense in
+            guard expense.managedObjectContext != nil, !expense.isDeleted else { return false }
             guard let expenseID = expense.safeID else { return false }
             return seenIDs.insert(expenseID).inserted
         }
@@ -110,6 +112,7 @@ final class Voucher: NSManagedObject, Identifiable {
         dateAdded: Date = Date(),
         sortOrder: Int = 0,
         pdfData: Data? = nil,
+        imageData: Data? = nil,
         storeColor: String = "#007AFF",
         textColor: String = "#FFFFFF"
     ) {
@@ -125,6 +128,7 @@ final class Voucher: NSManagedObject, Identifiable {
         self.expirationDate = expirationDate
         self.dateAdded = dateAdded
         self.pdfData = pdfData
+        self.imageData = imageData
         self.storeColor = storeColor
         self.textColor = textColor
         self.spentBeforeCurrentShare = 0
@@ -172,7 +176,7 @@ extension Voucher {
     }
 
     var safeID: UUID? {
-        guard managedObjectContext != nil, !isDeleted else { return nil }
+        guard hasAccessiblePersistentBacking else { return nil }
         if let value = primitiveValue(forKey: "id") as? UUID {
             return value
         }

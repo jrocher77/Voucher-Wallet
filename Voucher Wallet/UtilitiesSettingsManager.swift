@@ -23,6 +23,7 @@ class SettingsManager: ObservableObject {
     private let resetRequestedKey = "reset_learning_requested"
     private let hasSeenOnboardingKey = "has_seen_onboarding"
     private let showOnboardingNextLaunchKey = "show_onboarding_next_launch"
+    private let lastSeenOnboardingMajorVersionKey = "last_seen_onboarding_major_version"
     private let resetSharedExpenseIdentityKey = "reset_shared_expense_identity"
     
     @Published var shouldShowResetConfirmation = false
@@ -65,6 +66,7 @@ class SettingsManager: ObservableObject {
             resetRequestedKey: false,
             hasSeenOnboardingKey: false,
             showOnboardingNextLaunchKey: false,
+            lastSeenOnboardingMajorVersionKey: 0,
             VoucherSharingManager.identityDefaultsKey: "",
             resetSharedExpenseIdentityKey: false,
             "version_preference": appVersion
@@ -208,13 +210,22 @@ class SettingsManager: ObservableObject {
     func shouldShowOnboarding() -> Bool {
         let hasSeenOnboarding = UserDefaults.standard.bool(forKey: hasSeenOnboardingKey)
         let showOnboardingNextLaunch = UserDefaults.standard.bool(forKey: showOnboardingNextLaunchKey)
-        return !hasSeenOnboarding || showOnboardingNextLaunch
+        let lastSeenMajorVersion = UserDefaults.standard.integer(forKey: lastSeenOnboardingMajorVersionKey)
+        let shouldShowMajorVersionOnboarding = lastSeenMajorVersion < currentMajorVersion
+        return !hasSeenOnboarding || showOnboardingNextLaunch || shouldShowMajorVersionOnboarding
     }
 
     /// Marque la démonstration comme vue et remet le toggle des Réglages à OFF.
     func markOnboardingAsSeen() {
         UserDefaults.standard.set(true, forKey: hasSeenOnboardingKey)
         UserDefaults.standard.set(false, forKey: showOnboardingNextLaunchKey)
+        UserDefaults.standard.set(currentMajorVersion, forKey: lastSeenOnboardingMajorVersionKey)
+    }
+
+    private var currentMajorVersion: Int {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
+        let majorComponent = version.split(separator: ".").first ?? "1"
+        return Int(majorComponent) ?? 1
     }
 }
 

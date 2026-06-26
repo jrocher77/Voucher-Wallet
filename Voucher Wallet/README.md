@@ -54,7 +54,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 ### ⚙️ Réglages iOS
 - **Statistiques d'apprentissage** : Consultez les données apprises
 - **Réinitialisation** : Effacez les préférences apprises
-- **Démonstration** : Relancez l'écran de présentation au prochain lancement
+- **Démonstration** : Relancez l'écran de présentation au prochain lancement, avec les nouveautés d'import image/photo et de partage iCloud
 - **Identité de partage** : Modifiez ou réinitialisez le nom affiché avec vos dépenses sur les bons partagés
 - **Synchronisation** : Mise à jour automatique entre l'app et les Réglages
 - **À propos** : Version et informations de l'app
@@ -139,6 +139,7 @@ let suggested = StoreNameLearning.shared.suggestTextColor(
   - `reset_learning_requested` : Toggle de réinitialisation
   - `has_seen_onboarding` : Indique si la démonstration initiale a déjà été vue
   - `show_onboarding_next_launch` : Toggle pour relancer la démonstration
+  - `last_seen_onboarding_major_version` : Version majeure déjà présentée dans la démonstration, pour réafficher l'onboarding une fois uniquement après un changement majeur
 
 ---
 
@@ -239,7 +240,7 @@ Voucher Wallet/
 │   │   └── EditVoucherView.swift
 │   │
 │   ├── Import & Selection
-│   │   ├── AddVoucherView.swift (flux unique: ajout manuel + PDF + partage)
+│   │   ├── AddVoucherView.swift (flux unique: ajout manuel + PDF + image + photo + partage)
 │   │   └── ViewComponentsMultiVoucherList.swift
 │   │
 │   ├── Expenses
@@ -390,7 +391,7 @@ Les logs suivants sont générés :
 - Validation de contraste
 - Aperçu temps réel
 - Protection contre les doublons (saisie manuelle)
-- Import PDF simple et multiple
+- Import PDF simple et multiple, image, capture d'écran et photo
 
 ### EditVoucherView.swift
 - Modification de bon existant

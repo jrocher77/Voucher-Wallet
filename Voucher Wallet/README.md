@@ -9,6 +9,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 ### ✨ Gestion des Bons
 - **Ajout manuel** : Créez vos bons avec formulaire complet
 - **Import PDF, image et appareil photo** : Analysez vos PDF, images, captures d'écran et photos prises directement dans l'app avec OCR (Vision Framework)
+- **Écran de lancement natif** : Ouverture sur un launch screen statique aux couleurs de l'application
 - **Détection d'enseigne robuste** : Priorise les titres de bons et ignore les émetteurs techniques quand le marchand est indiqué ailleurs dans le PDF
 - **Co-branding Fnac/Darty** : Normalisation automatique en `Fnac / Darty` quand les deux enseignes sont détectées
 - **Import multiple** : Détectez et importez plusieurs bons depuis un PDF

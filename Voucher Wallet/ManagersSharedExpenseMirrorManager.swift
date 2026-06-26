@@ -160,9 +160,11 @@ extension VoucherSharingManager {
         record[SharedExpenseMirrorRecord.expenseID] = payload.expenseID.uuidString as CKRecordValue
         record[SharedExpenseMirrorRecord.amount] = payload.amount as CKRecordValue
         record[SharedExpenseMirrorRecord.date] = payload.date as CKRecordValue
-        record[SharedExpenseMirrorRecord.note] = payload.note as CKRecordValue?
         record[SharedExpenseMirrorRecord.authorDisplayName] = payload.authorDisplayName as CKRecordValue?
-        record[SharedExpenseMirrorRecord.authorRecordName] = payload.authorRecordName as CKRecordValue?
+        record[SharedExpenseMirrorRecord.authorRecordName] = packedAuthorRecordName(
+            payload.authorRecordName,
+            note: payload.note
+        ) as CKRecordValue?
         record[SharedExpenseMirrorRecord.isDeleted] = (payload.isDeleted ? 1 : 0) as CKRecordValue
         record[SharedExpenseMirrorRecord.modifiedAt] = Date() as CKRecordValue
 
@@ -324,9 +326,13 @@ extension VoucherSharingManager {
         ) || didChange
         didChange = update(&expense.amount, amount) || didChange
         didChange = update(&expense.date, date) || didChange
-        didChange = update(&expense.note, stringValue(record[SharedExpenseMirrorRecord.note])) || didChange
+        let packedAuthor = unpackedAuthorRecordName(stringValue(record[SharedExpenseMirrorRecord.authorRecordName]))
+        didChange = update(
+            &expense.note,
+            stringValue(record[SharedExpenseMirrorRecord.note]) ?? packedAuthor.note
+        ) || didChange
         didChange = update(&expense.authorDisplayName, stringValue(record[SharedExpenseMirrorRecord.authorDisplayName])) || didChange
-        didChange = update(&expense.authorRecordName, stringValue(record[SharedExpenseMirrorRecord.authorRecordName])) || didChange
+        didChange = update(&expense.authorRecordName, packedAuthor.authorRecordName) || didChange
         return didChange
     }
 
@@ -423,9 +429,33 @@ extension VoucherSharingManager {
         return false
     }
 
+    private func packedAuthorRecordName(_ authorRecordName: String?, note: String?) -> String? {
+        guard let note, !note.isEmpty else { return authorRecordName }
+        let payload = SharedExpenseMirrorPackedAuthor(authorRecordName: authorRecordName, note: note)
+        guard let data = try? JSONEncoder().encode(payload) else { return authorRecordName }
+        return "\(SharedExpenseMirrorPackedAuthor.prefix)\(data.base64EncodedString())"
+    }
+
+    private func unpackedAuthorRecordName(_ value: String?) -> SharedExpenseMirrorPackedAuthor {
+        guard let value,
+              value.hasPrefix(SharedExpenseMirrorPackedAuthor.prefix),
+              let data = Data(base64Encoded: String(value.dropFirst(SharedExpenseMirrorPackedAuthor.prefix.count))),
+              let payload = try? JSONDecoder().decode(SharedExpenseMirrorPackedAuthor.self, from: data) else {
+            return SharedExpenseMirrorPackedAuthor(authorRecordName: value, note: nil)
+        }
+        return payload
+    }
+
     private func update<T: Equatable>(_ value: inout T, _ newValue: T) -> Bool {
         guard value != newValue else { return false }
         value = newValue
         return true
     }
+}
+
+private struct SharedExpenseMirrorPackedAuthor: Codable {
+    static let prefix = "vwm-note:"
+
+    let authorRecordName: String?
+    let note: String?
 }

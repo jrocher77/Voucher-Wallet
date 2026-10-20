@@ -92,7 +92,7 @@ final class SharedModelContainer {
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: container,
             queue: .main
-        ) { notification in
+        ) { [weak self] notification in
             guard let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey] as? NSPersistentCloudKitContainer.Event,
                   event.type == .import || event.type == .export else {
                 return

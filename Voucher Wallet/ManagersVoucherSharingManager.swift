@@ -628,7 +628,7 @@ final class VoucherSharingManager {
         persistence.container.purgeObjectsAndRecordsInZone(
             with: removal.zoneID,
             in: removal.sharedStore
-        ) { _, error in
+        ) { [weak self] _, error in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isRemovingReceivedShare = false

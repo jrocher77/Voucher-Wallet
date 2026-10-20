@@ -11,6 +11,9 @@ import Combine
 
 struct VoucherDetailView: View {
     let voucher: Voucher
+    let showsHeaderCard: Bool
+    let showsVoucherNumberBelowCode: Bool
+    let onVoucherDeleted: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(VoucherSharingManager.self) private var sharingManager
     @Environment(\.managedObjectContext) private var modelContext
@@ -33,6 +36,18 @@ struct VoucherDetailView: View {
     @State private var favoriteRevision = 0
     @State private var expenseRevision = 0
     @State private var voucherRevision = 0
+
+    init(
+        voucher: Voucher,
+        showsHeaderCard: Bool = true,
+        showsVoucherNumberBelowCode: Bool = false,
+        onVoucherDeleted: (() -> Void)? = nil
+    ) {
+        self.voucher = voucher
+        self.showsHeaderCard = showsHeaderCard
+        self.showsVoucherNumberBelowCode = showsVoucherNumberBelowCode
+        self.onVoucherDeleted = onVoucherDeleted
+    }
     
     enum ExpensePresentation: Identifiable {
         case new
@@ -57,31 +72,39 @@ struct VoucherDetailView: View {
     }
     
     var body: some View {
-        if isVoucherDeleted {
-            // Vue vide pendant la fermeture
-            Color.clear
-                .onAppear {
-                    dismiss()
-                }
-        } else {
-            contentView
-                .overlay {
-                    if isScreenCaptured && voucher.isInActiveShare {
-                        ContentUnavailableView(
-                            "Contenu masqué",
-                            systemImage: "eye.slash.fill",
-                            description: Text("Le bon est masqué pendant la recopie ou l'enregistrement de l'écran.")
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.background)
+        Group {
+            if isVoucherDeleted {
+                // Vue vide pendant la fermeture
+                Color.clear
+                    .onAppear {
+                        dismiss()
                     }
-                }
+            } else {
+                contentView
+                    .overlay {
+                        if isScreenCaptured && voucher.isInActiveShare {
+                            ContentUnavailableView(
+                                "Contenu masqué",
+                                systemImage: "eye.slash.fill",
+                                description: Text("Le bon est masqué pendant la recopie ou l'enregistrement de l'écran.")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.background)
+                        }
+                    }
+            }
+        }
+        .onChange(of: isVoucherDeleted) { wasDeleted, isDeleted in
+            guard !wasDeleted, isDeleted else { return }
+            onVoucherDeleted?()
         }
     }
     
     private var contentView: some View {
         VStack(spacing: 0) {
-            headerCardSection
+            if showsHeaderCard {
+                headerCardSection
+            }
             
             ScrollView {
                 VStack(spacing: 24) {
@@ -397,6 +420,24 @@ struct VoucherDetailView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 220)
             .padding(.horizontal)
+
+            if showsVoucherNumberBelowCode {
+                VStack(spacing: 4) {
+                    Text("Numéro du bon")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text(voucher.voucherNumber)
+                        .font(.system(.body, design: .monospaced))
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal)
+                .accessibilityElement(children: .combine)
+            }
         }
     }
     

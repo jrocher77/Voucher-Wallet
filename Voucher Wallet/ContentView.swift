@@ -17,6 +17,8 @@ struct ContentView: View {
     @Environment(VoucherSharingManager.self) private var sharingManager
     @Environment(\.managedObjectContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FetchRequest(
         sortDescriptors: [NSSortDescriptor(keyPath: \Voucher.dateAdded, ascending: false)],
         animation: .default
@@ -48,8 +50,10 @@ struct ContentView: View {
     @State private var cloudNetworkMonitorQueue = DispatchQueue(label: "VoucherWallet.CloudNetworkMonitor")
     @State private var isCloudNetworkAvailable = true
     @State private var didStartCloudNetworkMonitor = false
+    @State private var selectedVoucherID: UUID?
 
     private let favoriteChangeAnimation = Animation.spring(response: 0.42, dampingFraction: 0.86)
+    private let expandedLayoutMinimumWidth: CGFloat = 700
 
     private enum CloudRefreshStatus: Equatable {
         case syncing
@@ -245,6 +249,11 @@ struct ContentView: View {
     }
 
     @MainActor
+    private var visibleOrderedVoucherItems: [VoucherListItem] {
+        favoriteVoucherItems + otherVoucherItems
+    }
+
+    @MainActor
     private var favoriteVouchers: [Voucher] {
         favoriteVoucherItems.map(\.voucher)
     }
@@ -263,14 +272,20 @@ struct ContentView: View {
     }
     
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            Group {
-                if vouchers.isEmpty {
-                    emptyStateView
-                } else {
-                    voucherListView
+        GeometryReader { geometry in
+            let usesExpandedLayout = horizontalSizeClass == .regular
+                && geometry.size.width >= expandedLayoutMinimumWidth
+
+            NavigationStack(path: $navigationPath) {
+                Group {
+                    if vouchers.isEmpty {
+                        emptyStateView
+                    } else if usesExpandedLayout {
+                        expandedWalletView(totalWidth: geometry.size.width)
+                    } else {
+                        voucherListView(isExpandedLayout: false)
+                    }
                 }
-            }
             .navigationDestination(for: Voucher.self) { voucher in
                 VoucherDetailView(voucher: voucher)
             }
@@ -336,8 +351,12 @@ struct ContentView: View {
                 
                 // Trouver le voucher correspondant
                 if let voucher = vouchers.first(where: { $0.safeID == voucherID }) {
-                    // Naviguer vers le détail
-                    navigationPath.append(voucher)
+                    if usesExpandedLayout {
+                        selectVoucher(voucherID, scrollToSelection: true)
+                    } else {
+                        selectedVoucherID = voucherID
+                        navigationPath.append(voucher)
+                    }
                     
                     // Réinitialiser l'ID sélectionné
                     urlHandler.selectedVoucherID = nil
@@ -376,6 +395,16 @@ struct ContentView: View {
                 reloadReceivedSharedVouchers(reason: "wallet-appear")
                 refreshSharedExpenseMirrorsInBackground(reason: "wallet-appear")
                 initializeSortOrderIfNeeded()
+                reconcileExpandedSelection(isExpandedLayout: usesExpandedLayout)
+            }
+            .onChange(of: usesExpandedLayout) { _, isExpanded in
+                if isExpanded, !navigationPath.isEmpty {
+                    navigationPath.removeLast(navigationPath.count)
+                }
+                reconcileExpandedSelection(isExpandedLayout: isExpanded)
+            }
+            .onChange(of: visibleOrderedVoucherItems.map(\.id)) { _, _ in
+                reconcileExpandedSelection(isExpandedLayout: usesExpandedLayout)
             }
             .onReceive(NotificationCenter.default.publisher(for: FavoritesManager.favoritesDidChange)) { _ in
                 favoriteRevision += 1
@@ -448,6 +477,7 @@ struct ContentView: View {
                 sharingManager.persistence.scheduleCloudRefreshes(delays: [0.0, 1.0, 3.0])
                 reloadReceivedSharedVouchers(reason: "scene-active")
                 refreshSharedExpenseMirrorsInBackground(reason: "scene-active")
+            }
             }
         }
         .monitorSettingsChanges() // Surveille les demandes de réinitialisation depuis les Réglages iOS
@@ -629,7 +659,41 @@ struct ContentView: View {
     }
     
     @ViewBuilder
-    private var voucherListView: some View {
+    private func expandedWalletView(totalWidth: CGFloat) -> some View {
+        let listWidth = min(max(totalWidth * 0.38, 360), 430)
+
+        HStack(spacing: 0) {
+            Group {
+                if let selectedItem = visibleOrderedVoucherItems.first(where: { $0.id == selectedVoucherID }) {
+                    VoucherDetailView(
+                        voucher: selectedItem.voucher,
+                        showsHeaderCard: false,
+                        showsVoucherNumberBelowCode: true,
+                        onVoucherDeleted: {
+                            selectReplacementVoucher(afterRemoving: selectedItem.id)
+                        }
+                    )
+                    .id(selectedItem.id)
+                } else {
+                    ContentUnavailableView(
+                        "Aucun bon sélectionné",
+                        systemImage: "wallet.pass",
+                        description: Text("Sélectionnez un bon dans la liste.")
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            voucherListView(isExpandedLayout: true)
+                .frame(width: listWidth)
+                .background(.background)
+        }
+    }
+
+    @ViewBuilder
+    private func voucherListView(isExpandedLayout: Bool) -> some View {
         let sections = walletSections
 
         ScrollViewReader { proxy in
@@ -646,7 +710,11 @@ struct ContentView: View {
                         }
 
                         ForEach(sections.favorites) { item in
-                            voucherRow(item, isFavoriteSection: true)
+                            voucherRow(
+                                item,
+                                isFavoriteSection: true,
+                                isExpandedLayout: isExpandedLayout
+                            )
                                 .background(focusedVoucherAnchor(for: item))
                                 .id("\(item.id)-favorite-\(item.isFavorite)")
                         }
@@ -663,7 +731,11 @@ struct ContentView: View {
                         }
 
                         ForEach(sections.others) { item in
-                            voucherRow(item, isFavoriteSection: false)
+                            voucherRow(
+                                item,
+                                isFavoriteSection: false,
+                                isExpandedLayout: isExpandedLayout
+                            )
                                 .background(focusedVoucherAnchor(for: item))
                                 .id("\(item.id)-other-\(item.isFavorite)")
                         }
@@ -884,7 +956,12 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func voucherRow(_ item: VoucherListItem, isFavoriteSection: Bool) -> some View {
+    private func voucherRow(
+        _ item: VoucherListItem,
+        isFavoriteSection: Bool,
+        isExpandedLayout: Bool
+    ) -> some View {
+        let isSelected = isExpandedLayout && selectedVoucherID == item.id
         let row = ZStack(alignment: .topLeading) {
             Button {
                 guard item.voucher.managedObjectContext != nil,
@@ -895,12 +972,32 @@ struct ContentView: View {
                     refreshVisibleVouchers(reason: "ignored-unavailable-voucher-tap")
                     return
                 }
-                navigationPath.append(item.voucher)
+                if isExpandedLayout {
+                    selectVoucher(item.id)
+                } else {
+                    selectedVoucherID = item.id
+                    navigationPath.append(item.voucher)
+                }
             } label: {
                 VoucherCardView(item: item.cardItem, showsFavoriteIcon: false)
                     .id("\(item.id)-card-\(item.isFavorite)")
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(
+                                Color.accentColor,
+                                lineWidth: isSelected ? 3 : 0
+                            )
+                    }
+                    .shadow(
+                        color: isSelected ? Color.accentColor.opacity(0.28) : .clear,
+                        radius: isSelected ? 10 : 0,
+                        x: 0,
+                        y: 4
+                    )
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityValue(isSelected ? Text("Sélectionné") : Text(""))
 
             Button {
                 toggleFavorite(item.voucher)
@@ -921,7 +1018,25 @@ struct ContentView: View {
             .padding(.leading, 12)
             .padding(.top, 12)
             .zIndex(1)
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.accentColor)
+                    .background(Circle().fill(.background))
+                    .accessibilityHidden(true)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, -7)
+                    .padding(.top, -7)
+                    .transition(.scale.combined(with: .opacity))
+                    .zIndex(2)
+            }
         }
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.2),
+            value: isSelected
+        )
         .contextMenu {
             voucherContextMenu(for: item.voucher)
         }
@@ -960,6 +1075,9 @@ struct ContentView: View {
 
         Button {
             if voucher.isReceivedShare {
+                if let voucherID = voucher.safeID, selectedVoucherID == voucherID {
+                    selectReplacementVoucher(afterRemoving: voucherID)
+                }
                 sharingManager.removeReceivedVoucher(voucher, after: 0.15)
             } else {
                 voucherToEdit = voucher
@@ -989,7 +1107,50 @@ struct ContentView: View {
         }
     }
 
+    private func selectVoucher(_ voucherID: UUID, scrollToSelection: Bool = false) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            selectedVoucherID = voucherID
+        }
+        if scrollToSelection {
+            pendingFocusedVoucherID = voucherID
+            focusedVoucherScrollRequest += 1
+        }
+    }
+
+    @MainActor
+    private func reconcileExpandedSelection(isExpandedLayout: Bool) {
+        guard isExpandedLayout else { return }
+        let items = visibleOrderedVoucherItems
+        guard !items.isEmpty else {
+            selectedVoucherID = nil
+            return
+        }
+        guard let selectedVoucherID,
+              items.contains(where: { $0.id == selectedVoucherID }) else {
+            self.selectedVoucherID = items[0].id
+            return
+        }
+    }
+
+    @MainActor
+    private func selectReplacementVoucher(afterRemoving removedVoucherID: UUID) {
+        let items = visibleOrderedVoucherItems
+        guard let removedIndex = items.firstIndex(where: { $0.id == removedVoucherID }) else {
+            reconcileExpandedSelection(isExpandedLayout: true)
+            return
+        }
+
+        if items.indices.contains(removedIndex + 1) {
+            selectedVoucherID = items[removedIndex + 1].id
+        } else if removedIndex > items.startIndex {
+            selectedVoucherID = items[removedIndex - 1].id
+        } else {
+            selectedVoucherID = nil
+        }
+    }
+
     private func focusVoucher(_ voucherID: UUID) {
+        selectedVoucherID = voucherID
         pendingFocusedVoucherID = voucherID
         focusedVoucherScrollRequest += 1
     }
@@ -1043,6 +1204,9 @@ struct ContentView: View {
         let objectID = voucher.objectID
         guard let voucherID = voucher.safeID else { return }
         let wasFavorite = voucher.isFavorite
+        if selectedVoucherID == voucherID {
+            selectReplacementVoucher(afterRemoving: voucherID)
+        }
         voucherToDelete = nil
         navigationPath.removeLast(navigationPath.count)
 

@@ -31,6 +31,7 @@ Application iOS pour gérer et organiser vos bons d'achat numériquement, avec s
 - **Gestion des mappings** : Noms détectés automatiquement mappés aux noms validés
 
 ### 🔍 Organisation
+- **Interface adaptative iPhone Duo** : En mode ouvert, les informations du bon sélectionné et son numéro sous le code restent à gauche tandis que les cartes sont regroupées à droite, avec une indication visuelle et VoiceOver claire de la sélection
 - **Filtres multi-critères** :
   - Recherche par nom d'enseigne
   - Filtrage par montant (min/max)
